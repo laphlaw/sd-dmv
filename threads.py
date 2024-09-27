@@ -213,7 +213,7 @@ if __name__ == '__main__':
     frame_skip = 3
     files = list_mov_files_in_directory(directory_path)
     total_files = len(files)
-    num_processes = 8  # Adjust based on your CPU cores
+    num_processes = 4  # Adjust based on your CPU cores
     logs(f"Total files: {total_files}")
     total_start_time = time.time()
 

@@ -257,7 +257,7 @@ fail_count = sum(1 for c in cars if c.get('success') == False)
 logs(f"Success rate: {round(success_count / (len(files)), 2)}")
 print("")
 
-logs(f"Total succesful cars: {success_count}")
+logs(f"Total successful cars: {success_count}")
 sorted_cars = sorted(cars, key=lambda x: x['process_time'], reverse=True)
 
 for car in sorted_cars:
