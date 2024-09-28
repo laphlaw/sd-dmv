@@ -1,6 +1,6 @@
 import cv2
 import easyocr
-import kbb
+from utils import kbb
 import re
 import os
 from collections import Counter

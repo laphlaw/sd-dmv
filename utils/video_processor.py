@@ -1,15 +1,18 @@
+# utils/video_processor.py
+
 import cv2
 import easyocr
-import kbb
+import kbb  # Assuming kbb.py is in the same directory
 import re
 import os
+import sqlite3
 from collections import Counter
 from datetime import datetime
 import exiftool
 import time
-from multiprocessing import Pool
-from functools import partial
-import math
+
+# Path to the database
+DATABASE = os.path.join('data', 'cars.db')
 
 def logs(msg):
     current_time = datetime.now()
@@ -83,11 +86,12 @@ def add_kbb_info(plate, car):
             car['year'] = r['data']['vehicleUrlByLicense']['year']
             car['make'] = r['data']['vehicleUrlByLicense']['make']
             car['model'] = r['data']['vehicleUrlByLicense']['model']
+            car['vin'] = r['data']['vehicleUrlByLicense']['vin']
             car['plate'] = plate
             car['url'] = r['data']['vehicleUrlByLicense']['url']
             car['success'] = True
-    except:
-        logs("Something happened when looking up via KBB")
+    except Exception as e:
+        logs(f"Error when looking up via KBB: {e}")
 
 def list_mov_files_in_directory(directory):
     mov_files = [f for f in os.listdir(directory)
@@ -105,7 +109,6 @@ def clean_license_plate(license_plate):
 def process_video(video_file, frame_skip, reader):
     start_time = time.time()
     logs(f"Processing {video_file}")
-    car = {}
 
     cap = cv2.VideoCapture(video_file)
     if not cap.isOpened():
@@ -127,11 +130,14 @@ def process_video(video_file, frame_skip, reader):
         if current_frame % frame_skip == 0:
             read_frames += 1
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # Run EasyOCR
             results = reader.readtext(gray)
             for (bbox, text, prob) in results:
                 plate = clean_license_plate(text)
                 if is_license_plate(plate):
                     possible_plates.append(plate)
+
         current_frame += 1
 
     cap.release()
@@ -146,9 +152,23 @@ def find_car_from_file(file, directory_path, frame_skip, reader):
     metadata = get_video_metadata(video_file)
     car['file'] = video_file
     if metadata and 'Composite:GPSPosition' in metadata:
-        car['gps'] = metadata['Composite:GPSPosition']
+        gps_position = metadata['Composite:GPSPosition']
+        # Parse GPS position
+        try:
+            lat_str, lon_str = gps_position.split(', ')
+            car['latitude'] = float(lat_str)
+            car['longitude'] = float(lon_str)
+        except:
+            car['latitude'] = None
+            car['longitude'] = None
     else:
-        car['gps'] = None
+        car['latitude'] = None
+        car['longitude'] = None
+
+    if metadata and 'QuickTime:CreateDate' in metadata:
+        car['date_time'] = metadata['QuickTime:CreateDate']
+    else:
+        car['date_time'] = None
 
     possible_plates = process_video(video_file, frame_skip, reader)
     logs(f"Possible plates found: {len(possible_plates)}")
@@ -178,81 +198,79 @@ def find_car_from_file(file, directory_path, frame_skip, reader):
             break
 
     if car.get('success'):
+        car['license_plate'] = car['plate']
+        car['video_path'] = file  # Assuming the video file is in the data/videos/ directory
         return car
     else:
         logs(f"Did not find any cars with all the variations for file {file}")
-
-    logs("Trying raw text found from video rather than variations...")
-    for possible_plate in list(set(possible_plates)):
-        add_kbb_info(possible_plate, car)
-        if car.get('success'):
-            break
-        else:
-            time.sleep(1)
+        car['license_plate'] = plate  # Store the plate even if KBB lookup failed
+        car['video_path'] = file
+        car['success'] = False
 
     return car
 
-def process_files(file_list, directory_path, frame_skip):
-    # Initialize EasyOCR reader once per process
+def insert_car_data(car_data):
+    conn = sqlite3.connect(DATABASE)
+    cursor = conn.cursor()
+
+    # Create the table if it doesn't exist
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS cars (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date_time TEXT,
+        year INTEGER,
+        make TEXT,
+        model TEXT,
+        license_plate TEXT,
+        color TEXT,
+        vin TEXT,
+        latitude REAL,
+        longitude REAL,
+        video_path TEXT
+    )
+    ''')
+
+    # Insert the car data
+    cursor.execute('''
+    INSERT INTO cars (date_time, year, make, model, license_plate, color, vin, latitude, longitude, video_path)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (
+        car_data.get('date_time'),
+        car_data.get('year'),
+        car_data.get('make'),
+        car_data.get('model'),
+        car_data.get('license_plate'),
+        car_data.get('color'),
+        car_data.get('vin'),
+        car_data.get('latitude'),
+        car_data.get('longitude'),
+        car_data.get('video_path')
+    ))
+
+    conn.commit()
+    conn.close()
+
+def process_videos(directory_path, frame_skip=3):
+    files = list_mov_files_in_directory(directory_path)
+    total_files = len(files)
+    logs(f"Total files: {total_files}")
+
+    # Initialize EasyOCR reader once
     reader = easyocr.Reader(['en'])
-    logs(f"Initialized EasyOCR reader in process PID {os.getpid()}")
-    results = []
-    for f in file_list:
+
+    for f in files:
         start_time = time.time()
         car = find_car_from_file(f, directory_path, frame_skip, reader)
         end_time = time.time()
         elapsed_time = round((end_time - start_time), 2)
         car['process_time'] = elapsed_time
         logs(f"Finished processing {f} in {elapsed_time} seconds")
-        results.append(car)
-    return results
+
+        # Insert car data into the database
+        insert_car_data(car)
 
 if __name__ == '__main__':
-    cars = []
-    directory_path = '/Users/neil/Downloads/lps'  # Update your directory path as needed
-    frame_skip = 3
-    files = list_mov_files_in_directory(directory_path)
-    total_files = len(files)
-    num_processes = 4  # Adjust based on your CPU cores
-    logs(f"Total files: {total_files}")
-    total_start_time = time.time()
+    directory_path = '/path/to/your/video/files'  # Update with your actual directory
+    frame_skip = 3  # Adjust as needed
 
-    # Divide files among processes
-    files_per_process = math.ceil(total_files / num_processes)
-    file_chunks = [files[i:i + files_per_process] for i in range(0, total_files, files_per_process)]
-
-    # Prepare the partial function
-    process_files_partial = partial(process_files, directory_path=directory_path, frame_skip=frame_skip)
-
-    with Pool(processes=num_processes) as pool:
-        results = pool.map(process_files_partial, file_chunks)
-
-    # Flatten the list of results
-    cars = [car for sublist in results for car in sublist]
-
-    total_end_time = time.time()
-    elapsed_time = total_end_time - total_start_time
-    print("---------------------------------------------------\n")
-
-    logs(f"Finished processing {total_files} files in {round(elapsed_time, 2)} seconds")
-    logs(f"Frame skip: {frame_skip}")
-    logs(f"Avg time per car: {round(elapsed_time / len(cars), 2)}")
-
-    success_count = sum(1 for c in cars if c.get('success'))
-    fail_count = sum(1 for c in cars if not c.get('success'))
-
-    logs(f"Success rate: {round(success_count / len(files), 2)}\n")
-
-    logs(f"Total successful cars: {success_count}")
-    sorted_cars = sorted(cars, key=lambda x: x['process_time'], reverse=True)
-
-    for car in sorted_cars:
-        if car.get('success'):
-            print(car)
-
-    print("")
-
-    logs(f"Total failed cars: {fail_count}")
-    for car in sorted_cars:
-        if not car.get('success'):
-            print(car)
+    process_videos(directory_path, frame_skip)

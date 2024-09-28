@@ -1,0 +1,32 @@
+<!-- templates/base.html -->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title | default("Car Map") }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <!-- Include any other CSS files or libraries -->
+</head>
+<body>
+    <header>
+        <h1>Car Map</h1>
+    </header>
+
+    <main>
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <footer>
+        <p>&copy; {{ current_year }} Your Name</p>
+    </footer>
+
+    <!-- Include JavaScript files -->
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <!-- Include any other JS libraries (e.g., Google Maps API) -->
+    <script async defer
+        src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap">
+    </script>
+</body>
+</html>
