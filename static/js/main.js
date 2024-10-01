@@ -23,16 +23,17 @@ function initMap() {
             // Populate dropdowns
             populateMakes();
             populateYears();
+            populateStates();
 
-            // Add event listener to the filter form
-            document.getElementById('filter-form').addEventListener('submit', function(event) {
-                event.preventDefault();
-                fetchCars();
-            });
-
-            // Handle make change to update models
-            document.getElementById('make').addEventListener('change', function() {
-                populateModels();
+            // Add event listeners to filter inputs to automatically apply filters
+            const filterInputs = document.querySelectorAll('#filter-form input, #filter-form select');
+            filterInputs.forEach(input => {
+                input.addEventListener('change', function() {
+                    fetchCars();
+                    if (this.id === 'make') {
+                        populateModels(); // Update models when make changes
+                    }
+                });
             });
 
             // Handle reset filters button
@@ -50,6 +51,7 @@ function fetchCars() {
     const model = document.getElementById('model').value;
     const start_year = document.getElementById('start_year').value;
     const end_year = document.getElementById('end_year').value;
+    const state = document.getElementById('state').value;
     const license_plate = document.getElementById('license_plate').value;
     const color = document.getElementById('color').value;
     const start_date = document.getElementById('start_date').value;
@@ -62,6 +64,7 @@ function fetchCars() {
     if (model) params.append('model', model);
     if (start_year) params.append('start_year', start_year);
     if (end_year) params.append('end_year', end_year);
+    if (state) params.append('state', state);
     if (license_plate) params.append('license_plate', license_plate);
     if (color) params.append('color', color);
     if (start_date) params.append('start_date', start_date);
@@ -75,6 +78,8 @@ function fetchCars() {
             clearMarkers();
             // Add new markers
             addMarkers(data);
+            // Update car count
+            document.getElementById('car-count').textContent = `Car Count: ${data.length}`;
         })
         .catch(error => console.error('Error fetching car data:', error));
 }
@@ -103,6 +108,10 @@ function addMarkers(cars) {
                 <p>
                     <label for="info-license-plate-${car.id}">License Plate:</label>
                     <input type="text" id="info-license-plate-${car.id}" value="${car.license_plate || ''}">
+                </p>
+                <p>
+                    <label for="info-state-${car.id}">State:</label>
+                    <input type="text" id="info-state-${car.id}" value="${car.state || ''}">
                 </p>
                 <p>
                     <label for="info-vin-${car.id}">VIN:</label>
@@ -136,9 +145,14 @@ function addMarkers(cars) {
                     <label for="info-longitude-${car.id}">Longitude:</label>
                     <input type="text" id="info-longitude-${car.id}" value="${car.longitude || ''}">
                 </p>
+                     <p>
+                    <label for="info-video_path-${car.id}">Video:</label>
+                    <input type="text" id="info-video_path-${car.id}" value="${car.video_path || ''}">
+                </p>
                 <button type="button" id="save-car-data-${car.id}">Save</button>
+                <button type="button" id="refresh-car-data-${car.id}" class="refresh-button">Refresh</button>
                 <button type="button" id="delete-car-data-${car.id}" class="delete-button">Delete</button>
-                <video width="320" height="240" controls>
+                <video width="640" height="480" controls>
                     <source src="/videos/${car.video_path}" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
@@ -162,6 +176,11 @@ function addMarkers(cars) {
                 document.getElementById(`delete-car-data-${car.id}`).addEventListener('click', function() {
                     deleteCarData(car.id);
                 });
+
+                // Refresh button
+                document.getElementById(`refresh-car-data-${car.id}`).addEventListener('click', function() {
+                    refreshCarData(car.id);
+                });
             });
         });
 
@@ -182,7 +201,7 @@ function populateMakes() {
         .then(makes => {
             const makeSelect = document.getElementById('make');
             makeSelect.innerHTML = '<option value="">All</option>';
-            makes.forEach(make => {
+            makes.forEach((make, index) => {
                 const option = document.createElement('option');
                 option.value = make;
                 option.textContent = make;
@@ -235,11 +254,28 @@ function populateYears() {
         .catch(error => console.error('Error fetching years:', error));
 }
 
+function populateStates() {
+    fetch('/api/states')
+        .then(response => response.json())
+        .then(states => {
+            const stateSelect = document.getElementById('state');
+            stateSelect.innerHTML = '<option value="">All</option>';
+            states.forEach(state => {
+                const option = document.createElement('option');
+                option.value = state;
+                option.textContent = state;
+                stateSelect.appendChild(option);
+            });
+        })
+        .catch(error => console.error('Error fetching states:', error));
+}
+
 function resetFilters() {
     document.getElementById('make').value = '';
     document.getElementById('model').value = '';
     document.getElementById('start_year').value = '';
     document.getElementById('end_year').value = '';
+    document.getElementById('state').value = '';
     document.getElementById('license_plate').value = '';
     document.getElementById('color').value = '';
     document.getElementById('start_date').value = '';
@@ -258,7 +294,8 @@ function saveCarData(carId) {
         color: document.getElementById(`info-color-${carId}`).value || null,
         vin: document.getElementById(`info-vin-${carId}`).value || null,
         latitude: parseFloat(document.getElementById(`info-latitude-${carId}`).value) || null,
-        longitude: parseFloat(document.getElementById(`info-longitude-${carId}`).value) || null
+        longitude: parseFloat(document.getElementById(`info-longitude-${carId}`).value) || null,
+        state: document.getElementById(`info-state-${carId}`).value || null
     };
 
     fetch('/api/update_car', {
@@ -299,10 +336,51 @@ function deleteCarData(carId) {
                 // Remove the marker from the markers array
                 markers = markers.filter(marker => marker.carData.id !== carId);
                 infoWindow.close();
+                // Update car count
+                document.getElementById('car-count').textContent = `Car Count: ${markers.length}`;
             } else {
                 alert('Failed to delete car.');
             }
         })
         .catch(error => console.error('Error deleting car data:', error));
     }
+}
+
+function refreshCarData(carId) {
+    const licensePlate = document.getElementById(`info-license-plate-${carId}`).value || null;
+    const state = document.getElementById(`info-state-${carId}`).value || null;
+
+    if (!licensePlate || !state) {
+        alert('License plate and state are required to refresh car data.');
+        return;
+    }
+
+    fetch('/api/refresh_car', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ id: carId, license_plate: licensePlate, state: state })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            alert('Car data refreshed successfully.');
+            // Update fields with new data
+            document.getElementById(`info-year-${carId}`).value = result.year || '';
+            document.getElementById(`info-make-${carId}`).value = result.make || '';
+            document.getElementById(`info-model-${carId}`).value = result.model || '';
+            document.getElementById(`info-vin-${carId}`).value = result.vin || '';
+            // Update the marker title
+            currentMarker.title = `${result.year} ${result.make} ${result.model}`;
+            // Optionally, refresh the markers and car count
+            fetchCars();
+        } else {
+            alert('Failed to refresh car data: ' + result.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error refreshing car data:', error);
+        alert('An error occurred while refreshing car data.');
+    });
 }

@@ -3,6 +3,7 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory
 import sqlite3
 import os
+from utils import kbb
 
 app = Flask(__name__)
 
@@ -10,7 +11,8 @@ app = Flask(__name__)
 app.config['DATABASE'] = os.path.join(app.root_path, 'data', 'cars.db')
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'data', 'videos')
 
-# Database helper function
+
+# Database helper functions
 def get_db_connection():
     conn = sqlite3.connect(app.config['DATABASE'])
     conn.row_factory = sqlite3.Row  # Enable dict-like access to rows
@@ -21,6 +23,7 @@ def get_db_connection():
 def index():
     return render_template('index.html')
 
+
 @app.route('/api/cars')
 def get_cars():
     # Fetch filter parameters from request.args
@@ -30,6 +33,7 @@ def get_cars():
     end_year = request.args.get('end_year')
     license_plate = request.args.get('license_plate')
     color = request.args.get('color')
+    state = request.args.get('state')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
 
@@ -41,8 +45,11 @@ def get_cars():
     params = []
 
     if make:
-        query += ' AND make = ?'
-        params.append(make)
+        if make == 'Unknown':
+            query += ' AND make IS NULL'
+        else:
+            query += ' AND make = ?'
+            params.append(make)
     if model:
         query += ' AND model = ?'
         params.append(model)
@@ -58,6 +65,9 @@ def get_cars():
     if color:
         query += ' AND color = ?'
         params.append(color)
+    if state:
+        query += ' AND state = ?'
+        params.append(state)
     if start_date:
         query += ' AND date_time >= ?'
         params.append(start_date)
@@ -83,11 +93,13 @@ def get_cars():
             'vin': row['vin'],
             'latitude': row['latitude'],
             'longitude': row['longitude'],
-            'video_path': row['video_path']
+            'video_path': row['video_path'],
+            'state': row['state']
         }
         cars.append(car)
 
     return jsonify(cars)
+
 
 @app.route('/api/first_car_location')
 def get_first_car_location():
@@ -103,15 +115,21 @@ def get_first_car_location():
     else:
         return jsonify({'latitude': 0, 'longitude': 0})
 
+
 @app.route('/api/makes')
 def get_makes():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT DISTINCT make FROM cars WHERE make IS NOT NULL ORDER BY make')
+    cursor.execute('SELECT DISTINCT make FROM cars ORDER BY make')
     rows = cursor.fetchall()
     conn.close()
-    makes = [row['make'] for row in rows]
+    makes = []
+    makes.append('Unknown')  # Add 'Unknown' as the second option
+    for row in rows:
+        if row['make']:
+            makes.append(row['make'])
     return jsonify(makes)
+
 
 @app.route('/api/models')
 def get_models():
@@ -119,13 +137,18 @@ def get_models():
     conn = get_db_connection()
     cursor = conn.cursor()
     if make:
-        cursor.execute('SELECT DISTINCT model FROM cars WHERE make = ? AND model IS NOT NULL ORDER BY model', (make,))
+        if make == 'Unknown':
+            cursor.execute('SELECT DISTINCT model FROM cars WHERE make IS NULL AND model IS NOT NULL ORDER BY model')
+        else:
+            cursor.execute('SELECT DISTINCT model FROM cars WHERE make = ? AND model IS NOT NULL ORDER BY model',
+                           (make,))
     else:
         cursor.execute('SELECT DISTINCT model FROM cars WHERE model IS NOT NULL ORDER BY model')
     rows = cursor.fetchall()
     conn.close()
     models = [row['model'] for row in rows]
     return jsonify(models)
+
 
 @app.route('/api/years')
 def get_years():
@@ -136,6 +159,18 @@ def get_years():
     conn.close()
     years = [row['year'] for row in rows]
     return jsonify(years)
+
+
+@app.route('/api/states')
+def get_states():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT state FROM cars WHERE state IS NOT NULL ORDER BY state')
+    rows = cursor.fetchall()
+    conn.close()
+    states = [row['state'] for row in rows]
+    return jsonify(states)
+
 
 @app.route('/api/update_car', methods=['POST'])
 def update_car():
@@ -150,22 +185,24 @@ def update_car():
     vin = data.get('vin')
     latitude = data.get('latitude')
     longitude = data.get('longitude')
+    state = data.get('state')
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute('''
         UPDATE cars
-        SET date_time = ?, year = ?, make = ?, model = ?, license_plate = ?, color = ?, vin = ?, latitude = ?, longitude = ?
+        SET date_time = ?, year = ?, make = ?, model = ?, license_plate = ?, color = ?, vin = ?, latitude = ?, longitude = ?, state = ?
         WHERE id = ?
     ''', (
-        date_time, year, make, model, license_plate, color, vin, latitude, longitude, car_id
+        date_time, year, make, model, license_plate, color, vin, latitude, longitude, state, car_id
     ))
 
     conn.commit()
     conn.close()
 
     return jsonify({'status': 'success'})
+
 
 @app.route('/api/delete_car', methods=['POST'])
 def delete_car():
@@ -184,9 +221,56 @@ def delete_car():
 
     return jsonify({'status': 'success'})
 
+
+@app.route('/api/refresh_car', methods=['POST'])
+def refresh_car():
+    data = request.get_json()
+    car_id = data.get('id')
+    license_plate = data.get('license_plate')
+    state = data.get('state')
+
+    if not (license_plate and state):
+        return jsonify({'status': 'error', 'message': 'License plate and state are required'}), 400
+
+    # Use KBB to get updated car info
+    try:
+        r = kbb.KBB(license_plate, state).lookup()
+        if 'data' in r and 'vehicleUrlByLicense' in r['data'] and r['data']['vehicleUrlByLicense']:
+            vehicle_data = r['data']['vehicleUrlByLicense']
+            year = vehicle_data.get('year')
+            make = vehicle_data.get('make')
+            model = vehicle_data.get('model')
+            vin = vehicle_data.get('vin')
+
+            # Update the car record in the database
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute('''
+                      UPDATE cars
+                      SET year = ?, make = ?, model = ?, vin = ?, state = ?
+                      WHERE id = ?
+                  ''', (year, make, model, vin, state, car_id))
+            conn.commit()
+            conn.close()
+
+            return jsonify({
+                'status': 'success',
+                'year': year,
+                'make': make,
+                'model': model,
+                'vin': vin,
+                'state': state
+            })
+        else:
+            return jsonify({'status': 'error', 'message': 'Vehicle data not found in KBB response'}), 404
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/videos/<path:filename>')
 def serve_video(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 
 if __name__ == '__main__':
     app.run(debug=True)

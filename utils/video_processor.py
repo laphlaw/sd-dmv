@@ -211,7 +211,7 @@ def insert_car_data(car_data):
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
 
-    # Create the table if it doesn't exist
+    # Create the table if it doesn't exist (now includes 'state' column)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS cars (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,14 +224,15 @@ def insert_car_data(car_data):
         vin TEXT,
         latitude REAL,
         longitude REAL,
-        video_path TEXT
+        video_path TEXT,
+        state TEXT
     )
     ''')
 
     # Insert the car data
     cursor.execute('''
-    INSERT INTO cars (date_time, year, make, model, license_plate, color, vin, latitude, longitude, video_path)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cars (date_time, year, make, model, license_plate, color, vin, latitude, longitude, video_path, state)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (
         car_data.get('date_time'),
         car_data.get('year'),
@@ -242,11 +243,13 @@ def insert_car_data(car_data):
         car_data.get('vin'),
         car_data.get('latitude'),
         car_data.get('longitude'),
-        car_data.get('video_path')
+        car_data.get('video_path'),
+        car_data.get('state')
     ))
 
     conn.commit()
     conn.close()
+
 
 def process_videos(directory_path, frame_skip=3):
     files = list_mov_files_in_directory(directory_path)
@@ -259,6 +262,7 @@ def process_videos(directory_path, frame_skip=3):
     for f in files:
         start_time = time.time()
         car = find_car_from_file(f, directory_path, frame_skip, reader)
+        car['state'] = "CA" # hack for now.. just hardcode CA
         end_time = time.time()
         elapsed_time = round((end_time - start_time), 2)
         car['process_time'] = elapsed_time
@@ -268,7 +272,7 @@ def process_videos(directory_path, frame_skip=3):
         insert_car_data(car)
 
 if __name__ == '__main__':
-    directory_path = '/Users/neil/Downloads/lps'  # Update with your actual directory
+    directory_path = 'data/videos-to-process/'  # Update with your actual directory
     frame_skip = 3  # Adjust as needed
 
     process_videos(directory_path, frame_skip)

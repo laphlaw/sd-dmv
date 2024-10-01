@@ -5,40 +5,51 @@
 {% block content %}
 <div id="filters">
     <form id="filter-form">
-        <label for="make">Make:</label>
-        <select id="make" name="make">
-            <option value="">All</option>
-        </select>
+        <!-- First row of filters -->
+        <div class="filter-row">
+            <label for="make">Make:</label>
+            <select id="make" name="make">
+                <option value="">All</option>
+            </select>
 
-        <label for="model">Model:</label>
-        <select id="model" name="model">
-            <option value="">All</option>
-        </select>
+            <label for="model">Model:</label>
+            <select id="model" name="model">
+                <option value="">All</option>
+            </select>
 
-        <label for="start_year">Start Year:</label>
-        <select id="start_year" name="start_year">
-            <option value="">Any</option>
-        </select>
+            <label for="start_year">Start Year:</label>
+            <select id="start_year" name="start_year">
+                <option value="">Any</option>
+            </select>
 
-        <label for="end_year">End Year:</label>
-        <select id="end_year" name="end_year">
-            <option value="">Any</option>
-        </select>
+            <label for="end_year">End Year:</label>
+            <select id="end_year" name="end_year">
+                <option value="">Any</option>
+            </select>
 
-        <label for="license_plate">License Plate:</label>
-        <input type="text" id="license_plate" name="license_plate">
+            <label for="state">State:</label>
+            <select id="state" name="state">
+                <option value="">All</option>
+            </select>
+        </div>
 
-        <label for="color">Color:</label>
-        <input type="text" id="color" name="color">
+        <!-- Second row of filters -->
+        <div class="filter-row">
+            <label for="license_plate">License Plate:</label>
+            <input type="text" id="license_plate" name="license_plate">
 
-        <label for="start_date">Start Date:</label>
-        <input type="date" id="start_date" name="start_date">
+            <label for="color">Color:</label>
+            <input type="text" id="color" name="color">
 
-        <label for="end_date">End Date:</label>
-        <input type="date" id="end_date" name="end_date">
+            <label for="start_date">Start Date:</label>
+            <input type="date" id="start_date" name="start_date">
 
-        <button type="submit">Filter</button>
-        <button type="button" id="reset-filters">Reset Filters</button>
+            <label for="end_date">End Date:</label>
+            <input type="date" id="end_date" name="end_date">
+
+            <button type="button" id="reset-filters">Reset Filters</button>
+            <span id="car-count">Car Count: 0</span>
+        </div>
     </form>
 </div>
 
