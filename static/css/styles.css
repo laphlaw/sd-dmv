@@ -31,9 +31,13 @@ header h1, footer p {
     margin-right: 5px;
 }
 
-#filters input, #filters button {
+#filters input, #filters select, #filters button {
     margin-right: 15px;
     margin-bottom: 5px;
+}
+
+#filters button {
+    padding: 5px 10px;
 }
 
 #map {
@@ -43,4 +47,34 @@ header h1, footer p {
 
 #info-window-content {
     width: 320px;
+}
+
+#info-window-content label {
+    display: block;
+    margin-bottom: 2px;
+}
+
+#info-window-content input {
+    width: 100%;
+    margin-bottom: 5px;
+}
+
+#info-window-content button {
+    padding: 5px 10px;
+    margin-right: 5px;
+}
+
+#info-window-content button.delete-button {
+    background-color: red;
+    color: white;
+    border: none;
+}
+
+#info-window-content button.delete-button:hover {
+    background-color: darkred;
+    cursor: pointer;
+}
+
+#save-car-data {
+    margin-bottom: 10px;
 }

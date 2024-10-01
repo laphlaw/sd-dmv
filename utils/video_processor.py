@@ -151,14 +151,12 @@ def find_car_from_file(file, directory_path, frame_skip, reader):
     video_file = os.path.join(directory_path, file)
     metadata = get_video_metadata(video_file)
     car['file'] = video_file
-    if metadata and 'Composite:GPSPosition' in metadata:
-        gps_position = metadata['Composite:GPSPosition']
-        # Parse GPS position
+    if metadata and 'Composite:GPSLatitude' in metadata:
         try:
-            lat_str, lon_str = gps_position.split(', ')
-            car['latitude'] = float(lat_str)
-            car['longitude'] = float(lon_str)
+            car['latitude'] = metadata['Composite:GPSLatitude']
+            car['longitude'] = metadata['Composite:GPSLongitude']
         except:
+            logs("Unable to read GPS data from file metadata")
             car['latitude'] = None
             car['longitude'] = None
     else:
@@ -270,7 +268,7 @@ def process_videos(directory_path, frame_skip=3):
         insert_car_data(car)
 
 if __name__ == '__main__':
-    directory_path = '/path/to/your/video/files'  # Update with your actual directory
+    directory_path = '/Users/neil/Downloads/lps'  # Update with your actual directory
     frame_skip = 3  # Adjust as needed
 
     process_videos(directory_path, frame_skip)

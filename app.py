@@ -10,7 +10,7 @@ app = Flask(__name__)
 app.config['DATABASE'] = os.path.join(app.root_path, 'data', 'cars.db')
 app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'data', 'videos')
 
-# Database helper functions
+# Database helper function
 def get_db_connection():
     conn = sqlite3.connect(app.config['DATABASE'])
     conn.row_factory = sqlite3.Row  # Enable dict-like access to rows
@@ -26,7 +26,8 @@ def get_cars():
     # Fetch filter parameters from request.args
     make = request.args.get('make')
     model = request.args.get('model')
-    year = request.args.get('year')
+    start_year = request.args.get('start_year')
+    end_year = request.args.get('end_year')
     license_plate = request.args.get('license_plate')
     color = request.args.get('color')
     start_date = request.args.get('start_date')
@@ -40,20 +41,23 @@ def get_cars():
     params = []
 
     if make:
-        query += ' AND make LIKE ?'
-        params.append(f'%{make}%')
+        query += ' AND make = ?'
+        params.append(make)
     if model:
-        query += ' AND model LIKE ?'
-        params.append(f'%{model}%')
-    if year:
-        query += ' AND year = ?'
-        params.append(year)
+        query += ' AND model = ?'
+        params.append(model)
+    if start_year:
+        query += ' AND year >= ?'
+        params.append(start_year)
+    if end_year:
+        query += ' AND year <= ?'
+        params.append(end_year)
     if license_plate:
         query += ' AND license_plate LIKE ?'
         params.append(f'%{license_plate}%')
     if color:
-        query += ' AND color LIKE ?'
-        params.append(f'%{color}%')
+        query += ' AND color = ?'
+        params.append(color)
     if start_date:
         query += ' AND date_time >= ?'
         params.append(start_date)
@@ -84,6 +88,101 @@ def get_cars():
         cars.append(car)
 
     return jsonify(cars)
+
+@app.route('/api/first_car_location')
+def get_first_car_location():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT latitude, longitude FROM cars WHERE latitude IS NOT NULL AND longitude IS NOT NULL LIMIT 1')
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        location = {'latitude': row['latitude'], 'longitude': row['longitude']}
+        return jsonify(location)
+    else:
+        return jsonify({'latitude': 0, 'longitude': 0})
+
+@app.route('/api/makes')
+def get_makes():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT make FROM cars WHERE make IS NOT NULL ORDER BY make')
+    rows = cursor.fetchall()
+    conn.close()
+    makes = [row['make'] for row in rows]
+    return jsonify(makes)
+
+@app.route('/api/models')
+def get_models():
+    make = request.args.get('make')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if make:
+        cursor.execute('SELECT DISTINCT model FROM cars WHERE make = ? AND model IS NOT NULL ORDER BY model', (make,))
+    else:
+        cursor.execute('SELECT DISTINCT model FROM cars WHERE model IS NOT NULL ORDER BY model')
+    rows = cursor.fetchall()
+    conn.close()
+    models = [row['model'] for row in rows]
+    return jsonify(models)
+
+@app.route('/api/years')
+def get_years():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT DISTINCT year FROM cars WHERE year IS NOT NULL ORDER BY year')
+    rows = cursor.fetchall()
+    conn.close()
+    years = [row['year'] for row in rows]
+    return jsonify(years)
+
+@app.route('/api/update_car', methods=['POST'])
+def update_car():
+    data = request.get_json()
+    car_id = data.get('id')
+    date_time = data.get('date_time')
+    year = data.get('year')
+    make = data.get('make')
+    model = data.get('model')
+    license_plate = data.get('license_plate')
+    color = data.get('color')
+    vin = data.get('vin')
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE cars
+        SET date_time = ?, year = ?, make = ?, model = ?, license_plate = ?, color = ?, vin = ?, latitude = ?, longitude = ?
+        WHERE id = ?
+    ''', (
+        date_time, year, make, model, license_plate, color, vin, latitude, longitude, car_id
+    ))
+
+    conn.commit()
+    conn.close()
+
+    return jsonify({'status': 'success'})
+
+@app.route('/api/delete_car', methods=['POST'])
+def delete_car():
+    data = request.get_json()
+    car_id = data.get('id')
+
+    if not car_id:
+        return jsonify({'status': 'error', 'message': 'No car ID provided'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('DELETE FROM cars WHERE id = ?', (car_id,))
+    conn.commit()
+    conn.close()
+
+    return jsonify({'status': 'success'})
 
 @app.route('/videos/<path:filename>')
 def serve_video(filename):
