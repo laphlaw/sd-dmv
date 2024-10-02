@@ -10,6 +10,7 @@ from collections import Counter
 from datetime import datetime
 import exiftool
 import time
+import itertools
 
 # Path to the database
 DATABASE = os.path.join('data', 'cars.db')
@@ -29,8 +30,9 @@ def get_video_metadata(video_file):
 
 def generate_variations(input_string):
     mistaken_mapping = {
-        '0': ['O'],
+        '0': ['O', 'D'],
         'O': ['0'],
+        'Q': ['O', '0'],
         '1': ['I', 'L'],
         'I': ['1'],
         '5': ['S'],
@@ -42,40 +44,63 @@ def generate_variations(input_string):
         'Z': ['2', '7'],
         '2': ['Z', '7'],
         '7': ['Z', '2'],
-        'Q': ['O'],
         '4': ['L'],
         'L': ['4'],
     }
 
-    result = []
-    seen = set()
+    # Step 1: Assign priority to each substitution pair based on the order in mistaken_mapping
+    substitution_priority = {}
+    priority = 1
+    for key, substitutions in mistaken_mapping.items():
+        for sub in substitutions:
+            substitution_priority[(key, sub)] = priority
+            priority += 1
 
-    result.append(input_string)
-    seen.add(input_string)
+    # Step 2: Prepare substitution options for each character, including the original character
+    substitution_options = []
+    for char in input_string:
+        options = [char]
+        substitutions = mistaken_mapping.get(char, [])
+        if substitutions:
+            options.extend(substitutions)
+        substitution_options.append(options)
 
-    def generate_for_position(position, current_strings):
-        if position >= len(input_string):
-            return
+    # Step 3: Generate all possible combinations using itertools.product
+    all_combinations = itertools.product(*substitution_options)
 
-        next_strings = []
-        for s in current_strings:
-            orig_char = s[position]
-            if orig_char in mistaken_mapping:
-                for substitution in mistaken_mapping[orig_char]:
-                    new_s = s[:position] + substitution + s[position + 1:]
-                    if new_s not in seen:
-                        seen.add(new_s)
-                        result.append(new_s)
-                        next_strings.append(new_s)
-
-        if next_strings:
-            generate_for_position(position + 1, next_strings)
+    # Step 4: Define a function to calculate priority metrics for a given variation
+    def calculate_priority_metrics(original, variant):
+        substitution_scores = []
+        for o, v in zip(original, variant):
+            if o != v:
+                pair = (o, v)
+                # If the substitution pair exists in the priority mapping, add its priority
+                score = substitution_priority.get(pair, float('inf'))  # Use a high score if not found
+                substitution_scores.append(score)
+        if substitution_scores:
+            min_priority = min(substitution_scores)
+            sum_priority = sum(substitution_scores)
+            return (min_priority, sum_priority)
         else:
-            generate_for_position(position + 1, current_strings)
+            # Original string has the highest priority
+            return (0, 0)
 
-    generate_for_position(0, [input_string])
+    # Step 5: Collect variations with their priority metrics
+    variations_with_priority = []
+    for combo in all_combinations:
+        variant = ''.join(combo)
+        priority_metrics = calculate_priority_metrics(input_string, variant)
+        variations_with_priority.append((priority_metrics, variant))
 
-    return result
+    # Step 6: Sort the variations based on priority metrics
+    # Primary: min_priority ascending
+    # Secondary: sum_priority ascending
+    sorted_variations = sorted(variations_with_priority, key=lambda x: (x[0][0], x[0][1]))
+
+    # Step 7: Extract the sorted variation strings, maintaining the original string first
+    sorted_variations_list = [variant for metrics, variant in sorted_variations]
+
+    return sorted_variations_list
 
 def add_kbb_info(plate, car):
     car['success'] = False
@@ -191,7 +216,7 @@ def find_car_from_file(file, directory_path, frame_skip, reader):
             break
         else:
             time.sleep(1)
-        if index >= 50:
+        if index >= 100:
             logs(f"We tried too many variations, giving up on {file}")
             break
 

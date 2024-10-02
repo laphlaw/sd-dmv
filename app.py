@@ -176,15 +176,10 @@ def get_states():
 def update_car():
     data = request.get_json()
     car_id = data.get('id')
-    date_time = data.get('date_time')
     year = data.get('year')
     make = data.get('make')
     model = data.get('model')
     license_plate = data.get('license_plate')
-    color = data.get('color')
-    vin = data.get('vin')
-    latitude = data.get('latitude')
-    longitude = data.get('longitude')
     state = data.get('state')
 
     conn = get_db_connection()
@@ -192,10 +187,10 @@ def update_car():
 
     cursor.execute('''
         UPDATE cars
-        SET date_time = ?, year = ?, make = ?, model = ?, license_plate = ?, color = ?, vin = ?, latitude = ?, longitude = ?, state = ?
+        SET year = ?, make = ?, model = ?, license_plate = ?, state = ?
         WHERE id = ?
     ''', (
-        date_time, year, make, model, license_plate, color, vin, latitude, longitude, state, car_id
+        year, make, model, license_plate, state, car_id
     ))
 
     conn.commit()
@@ -203,23 +198,6 @@ def update_car():
 
     return jsonify({'status': 'success'})
 
-
-@app.route('/api/delete_car', methods=['POST'])
-def delete_car():
-    data = request.get_json()
-    car_id = data.get('id')
-
-    if not car_id:
-        return jsonify({'status': 'error', 'message': 'No car ID provided'}), 400
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    cursor.execute('DELETE FROM cars WHERE id = ?', (car_id,))
-    conn.commit()
-    conn.close()
-
-    return jsonify({'status': 'success'})
 
 
 @app.route('/api/refresh_car', methods=['POST'])
@@ -235,7 +213,7 @@ def refresh_car():
     # Use KBB to get updated car info
     try:
         r = kbb.KBB(license_plate, state).lookup()
-        if 'data' in r and 'vehicleUrlByLicense' in r['data'] and r['data']['vehicleUrlByLicense']:
+        if 'data' in r and 'vehicleUrlByLicense' in r['data'] and r['data']['vehicleUrlByLicense']['make']:
             vehicle_data = r['data']['vehicleUrlByLicense']
             year = vehicle_data.get('year')
             make = vehicle_data.get('make')
@@ -247,9 +225,9 @@ def refresh_car():
             cursor = conn.cursor()
             cursor.execute('''
                       UPDATE cars
-                      SET year = ?, make = ?, model = ?, vin = ?, state = ?
+                      SET year = ?, make = ?, model = ?, license_plate = ?, vin = ?, state = ?
                       WHERE id = ?
-                  ''', (year, make, model, vin, state, car_id))
+                  ''', (year, make, model, license_plate, vin, state, car_id))
             conn.commit()
             conn.close()
 
@@ -258,6 +236,7 @@ def refresh_car():
                 'year': year,
                 'make': make,
                 'model': model,
+                'license_plate': license_plate,
                 'vin': vin,
                 'state': state
             })
@@ -266,6 +245,64 @@ def refresh_car():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+
+@app.route('/api/unknown_cars')
+def get_unknown_cars():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM cars WHERE make IS NULL OR make = ""')
+    rows = cursor.fetchall()
+    conn.close()
+
+    # Convert rows to dictionaries
+    cars = []
+    for row in rows:
+        car = {
+            'id': row['id'],
+            'date_time': row['date_time'],
+            'year': row['year'],
+            'make': row['make'],
+            'model': row['model'],
+            'license_plate': row['license_plate'],
+            'color': row['color'],
+            'vin': row['vin'],
+            'latitude': row['latitude'],
+            'longitude': row['longitude'],
+            'video_path': row['video_path'],
+            'state': row['state']
+        }
+        cars.append(car)
+
+    return jsonify(cars)
+
+@app.route('/api/delete_car', methods=['POST'])
+def delete_car():
+    data = request.get_json()
+    car_id = data.get('id')
+    video_path = data.get('video_path')
+
+    if not car_id:
+        return jsonify({'status': 'error', 'message': 'No car ID provided'}), 400
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    # Delete the car from the database
+    cursor.execute('DELETE FROM cars WHERE id = ?', (car_id,))
+    conn.commit()
+    conn.close()
+
+    # Delete the video file from the filesystem
+    if video_path:
+        video_full_path = os.path.join(app.config['UPLOAD_FOLDER'], video_path)
+        try:
+            if os.path.exists(video_full_path):
+                os.remove(video_full_path)
+        except Exception as e:
+            # Handle exception if needed
+            print(f"Error deleting video file: {e}")
+
+    return jsonify({'status': 'success'})
 
 @app.route('/videos/<path:filename>')
 def serve_video(filename):

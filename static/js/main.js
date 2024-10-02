@@ -45,6 +45,7 @@ function initMap() {
         .catch(error => console.error('Error fetching first car location:', error));
 }
 
+// Fetch and display cars based on filters
 function fetchCars() {
     // Get filter values
     const make = document.getElementById('make').value;
@@ -80,6 +81,10 @@ function fetchCars() {
             addMarkers(data);
             // Update car count
             document.getElementById('car-count').textContent = `Car Count: ${data.length}`;
+
+            // Calculate unknown count
+            let unknownCount = data.filter(car => !car.make || car.make === '').length;
+            document.getElementById('unknown-count').textContent = `Unknown Count: ${unknownCount}`;
         })
         .catch(error => console.error('Error fetching car data:', error));
 }
@@ -101,6 +106,19 @@ function addMarkers(cars) {
 
             // Create a new div element to hold the info window content
             const contentDiv = document.createElement('div');
+
+            // Correctly format the date/time for the datetime-local input
+            let formattedDateTime = '';
+            if (car.date_time) {
+                // Create a new Date object from the car.date_time string
+                let date = new Date(car.date_time);
+                if (!isNaN(date.getTime())) {
+                    // Adjust for timezone offset if necessary
+                    let tzOffset = date.getTimezoneOffset() * 60000; // Offset in milliseconds
+                    let localISOTime = new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
+                    formattedDateTime = localISOTime;
+                }
+            }
 
             // Build the HTML content with current values
             contentDiv.innerHTML = `
@@ -135,7 +153,7 @@ function addMarkers(cars) {
                 </p>
                 <p>
                     <label for="info-date-time-${car.id}">Date/Time:</label>
-                    <input type="datetime-local" id="info-date-time-${car.id}" value="${car.date_time ? car.date_time.replace(' ', 'T') : ''}">
+                    <input type="datetime-local" id="info-date-time-${car.id}" value="${formattedDateTime}" readonly>
                 </p>
                 <p>
                     <label for="info-latitude-${car.id}">Latitude:</label>
@@ -145,14 +163,10 @@ function addMarkers(cars) {
                     <label for="info-longitude-${car.id}">Longitude:</label>
                     <input type="text" id="info-longitude-${car.id}" value="${car.longitude || ''}">
                 </p>
-                     <p>
-                    <label for="info-video_path-${car.id}">Video:</label>
-                    <input type="text" id="info-video_path-${car.id}" value="${car.video_path || ''}">
-                </p>
                 <button type="button" id="save-car-data-${car.id}">Save</button>
                 <button type="button" id="refresh-car-data-${car.id}" class="refresh-button">Refresh</button>
                 <button type="button" id="delete-car-data-${car.id}" class="delete-button">Delete</button>
-                <video width="640" height="480" controls>
+                <video width="320" height="240" controls>
                     <source src="/videos/${car.video_path}" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
@@ -174,7 +188,7 @@ function addMarkers(cars) {
 
                 // Delete button
                 document.getElementById(`delete-car-data-${car.id}`).addEventListener('click', function() {
-                    deleteCarData(car.id);
+                    deleteCarData(car.id, car.video_path);
                 });
 
                 // Refresh button
@@ -286,7 +300,6 @@ function resetFilters() {
 function saveCarData(carId) {
     const updatedCarData = {
         id: carId,
-        date_time: document.getElementById(`info-date-time-${carId}`).value.replace('T', ' '),
         year: document.getElementById(`info-year-${carId}`).value || null,
         make: document.getElementById(`info-make-${carId}`).value || null,
         model: document.getElementById(`info-model-${carId}`).value || null,
@@ -308,7 +321,7 @@ function saveCarData(carId) {
     .then(response => response.json())
     .then(result => {
         if (result.status === 'success') {
-            alert('Car data updated successfully.');
+            // Optionally show a success message
             fetchCars();
             infoWindow.close();
         } else {
@@ -318,19 +331,18 @@ function saveCarData(carId) {
     .catch(error => console.error('Error updating car data:', error));
 }
 
-function deleteCarData(carId) {
+function deleteCarData(carId, videoPath) {
     if (confirm('Are you sure you want to delete this car?')) {
         fetch('/api/delete_car', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ id: carId })
+            body: JSON.stringify({ id: carId, video_path: videoPath })
         })
         .then(response => response.json())
         .then(result => {
             if (result.status === 'success') {
-                alert('Car deleted successfully.');
                 // Remove the marker from the map
                 currentMarker.setMap(null);
                 // Remove the marker from the markers array
@@ -365,12 +377,12 @@ function refreshCarData(carId) {
     .then(response => response.json())
     .then(result => {
         if (result.status === 'success') {
-            alert('Car data refreshed successfully.');
             // Update fields with new data
             document.getElementById(`info-year-${carId}`).value = result.year || '';
             document.getElementById(`info-make-${carId}`).value = result.make || '';
             document.getElementById(`info-model-${carId}`).value = result.model || '';
             document.getElementById(`info-vin-${carId}`).value = result.vin || '';
+            document.getElementById(`info-state-${carId}`).value = result.state || '';
             // Update the marker title
             currentMarker.title = `${result.year} ${result.make} ${result.model}`;
             // Optionally, refresh the markers and car count
@@ -383,4 +395,287 @@ function refreshCarData(carId) {
         console.error('Error refreshing car data:', error);
         alert('An error occurred while refreshing car data.');
     });
+}
+
+// Event listener for the "Unknown Count" clickable link
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize the map when the DOM is fully loaded
+    initMap();
+
+    // Add event listener to the unknown count
+    document.getElementById('unknown-count').addEventListener('click', function() {
+        openUnknownModal();
+    });
+});
+
+// Function to open the unknown cars modal
+function openUnknownModal() {
+    const modal = document.getElementById('unknown-modal');
+    const closeButton = document.getElementById('modal-close');
+
+    // Show the modal
+    modal.style.display = 'block';
+
+    // Fetch unknown cars and populate the table
+    fetchUnknownCars();
+
+    // Close the modal when the close button is clicked
+    closeButton.onclick = function() {
+        modal.style.display = 'none';
+    };
+
+    // Close the modal when clicking outside the modal content
+    window.onclick = function(event) {
+        if (event.target == modal) {
+            modal.style.display = 'none';
+        }
+    };
+}
+
+// Function to fetch unknown cars and populate the table
+function fetchUnknownCars() {
+    fetch('/api/unknown_cars')
+        .then(response => response.json())
+        .then(data => {
+            const tbody = document.querySelector('#unknown-cars-table tbody');
+            tbody.innerHTML = ''; // Clear existing rows
+
+            data.forEach(car => {
+                const row = document.createElement('tr');
+
+                // Editable fields
+                const licensePlateCell = document.createElement('td');
+                const licensePlateInput = document.createElement('input');
+                licensePlateInput.type = 'text';
+                licensePlateInput.value = car.license_plate || '';
+                licensePlateInput.id = `modal-license-plate-${car.id}`;
+                licensePlateCell.appendChild(licensePlateInput);
+
+                const stateCell = document.createElement('td');
+                const stateInput = document.createElement('input');
+                stateInput.type = 'text';
+                stateInput.value = car.state || '';
+                stateInput.id = `modal-state-${car.id}`;
+                stateCell.appendChild(stateInput);
+
+                const yearCell = document.createElement('td');
+                const yearInput = document.createElement('input');
+                yearInput.type = 'number';
+                yearInput.value = car.year || '';
+                yearInput.id = `modal-year-${car.id}`;
+                yearCell.appendChild(yearInput);
+
+                const makeCell = document.createElement('td');
+                const makeInput = document.createElement('input');
+                makeInput.type = 'text';
+                makeInput.value = car.make || '';
+                makeInput.id = `modal-make-${car.id}`;
+                makeCell.appendChild(makeInput);
+
+                const modelCell = document.createElement('td');
+                const modelInput = document.createElement('input');
+                modelInput.type = 'text';
+                modelInput.value = car.model || '';
+                modelInput.id = `modal-model-${car.id}`;
+                modelCell.appendChild(modelInput);
+
+                // Actions
+                const actionsCell = document.createElement('td');
+                actionsCell.colSpan = 2; // Span two columns
+
+                // Create a container for the buttons
+                const buttonContainer = document.createElement('div');
+                buttonContainer.className = 'button-container';
+
+                // Review Button
+                const reviewButton = document.createElement('button');
+                reviewButton.textContent = 'Review';
+                reviewButton.addEventListener('click', function() {
+                    openVideoModal(car.video_path);
+                });
+                buttonContainer.appendChild(reviewButton);
+
+                // Refresh Button
+                const refreshButton = document.createElement('button');
+                refreshButton.textContent = 'Refresh';
+                refreshButton.addEventListener('click', function() {
+                    modalRefreshCarData(car.id);
+                });
+                buttonContainer.appendChild(refreshButton);
+
+                // Save Button
+                const saveButton = document.createElement('button');
+                saveButton.textContent = 'Save';
+                saveButton.addEventListener('click', function() {
+                    modalSaveCarData(car.id);
+                });
+                buttonContainer.appendChild(saveButton);
+
+                // Delete Button
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.style.backgroundColor = 'red';
+                deleteButton.style.color = 'white';
+                deleteButton.addEventListener('click', function() {
+                    modalDeleteCarData(car.id, car.video_path);
+                });
+                buttonContainer.appendChild(deleteButton);
+
+                // Append the button container to the actions cell
+                actionsCell.appendChild(buttonContainer);
+
+                // Append cells to the row
+                row.appendChild(licensePlateCell);
+                row.appendChild(stateCell);
+                row.appendChild(yearCell);
+                row.appendChild(makeCell);
+                row.appendChild(modelCell);
+                row.appendChild(actionsCell);
+
+                // Append row to the table body
+                tbody.appendChild(row);
+            });
+        })
+        .catch(error => console.error('Error fetching unknown cars:', error));
+}
+
+function openVideoModal(videoPath) {
+    const modal = document.getElementById('video-modal');
+    const closeButton = document.getElementById('video-modal-close');
+    const videoSource = document.getElementById('car-video-source');
+    const videoElement = document.getElementById('car-video');
+
+    // Set the video source
+    videoSource.src = `/videos/${videoPath}`;
+    videoElement.load();
+
+    // Show the modal
+    modal.style.display = 'block';
+
+    // Function to close the modal
+    const closeModal = function() {
+        modal.style.display = 'none';
+        videoElement.pause();
+        // Remove event listeners
+        closeButton.removeEventListener('click', closeModal);
+        window.removeEventListener('click', outsideClick);
+        document.removeEventListener('keydown', escKeyListener);
+    };
+
+    // Function to handle clicks outside the modal content
+    const outsideClick = function(event) {
+        if (event.target == modal) {
+            closeModal();
+        }
+    };
+
+    // Function to handle ESC key press
+    const escKeyListener = function(event) {
+        event = event || window.event;
+        if (event.key === "Escape" || event.key === "Esc") {
+            closeModal();
+        }
+    };
+
+    // Close the modal when the close button is clicked
+    closeButton.addEventListener('click', closeModal);
+
+    // Close the modal when clicking outside the modal content
+    window.addEventListener('click', outsideClick);
+
+    // Close the modal when the ESC key is pressed
+    document.addEventListener('keydown', escKeyListener);
+}
+
+// Function to refresh car data from the modal
+function modalRefreshCarData(carId) {
+    const licensePlate = document.getElementById(`modal-license-plate-${carId}`).value || null;
+    const state = document.getElementById(`modal-state-${carId}`).value || null;
+
+    if (!licensePlate || !state) {
+        alert('License plate and state are required to refresh car data.');
+        return;
+    }
+
+    fetch('/api/refresh_car', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ id: carId, license_plate: licensePlate, state: state })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            // Update fields with new data
+            document.getElementById(`modal-year-${carId}`).value = result.year || '';
+            document.getElementById(`modal-make-${carId}`).value = result.make || '';
+            document.getElementById(`modal-model-${carId}`).value = result.model || '';
+            // Optionally, refresh counts and markers
+            fetchCars();
+            fetchUnknownCars();
+        } else {
+            alert('Failed to refresh car data: ' + result.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error refreshing car data:', error);
+        alert('An error occurred while refreshing car data.');
+    });
+}
+
+// Function to save manually edited car data from the modal
+function modalSaveCarData(carId) {
+    const updatedCarData = {
+        id: carId,
+        year: document.getElementById(`modal-year-${carId}`).value || null,
+        make: document.getElementById(`modal-make-${carId}`).value || null,
+        model: document.getElementById(`modal-model-${carId}`).value || null,
+        license_plate: document.getElementById(`modal-license-plate-${carId}`).value || null,
+        state: document.getElementById(`modal-state-${carId}`).value || null,
+    };
+
+    fetch('/api/update_car', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updatedCarData)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            // Optionally show a success message
+            // Update counts and markers
+            fetchCars();
+            fetchUnknownCars();
+        } else {
+            alert('Failed to save car data.');
+        }
+    })
+    .catch(error => console.error('Error saving car data:', error));
+}
+
+// Function to delete a car and its video file from the modal
+function modalDeleteCarData(carId, videoPath) {
+    if (confirm('Are you sure you want to delete this car? This action cannot be undone.')) {
+        fetch('/api/delete_car', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id: carId, video_path: videoPath })
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.status === 'success') {
+                // Update counts and markers
+                fetchCars();
+                fetchUnknownCars();
+            } else {
+                alert('Failed to delete car.');
+            }
+        })
+        .catch(error => console.error('Error deleting car data:', error));
+    }
 }

@@ -48,11 +48,48 @@
             <input type="date" id="end_date" name="end_date">
 
             <button type="button" id="reset-filters">Reset Filters</button>
-            <span id="car-count">Car Count: 0</span>
+            <div id="count-container">
+                <span id="car-count">Car Count: 0</span>
+                <span id="unknown-count">Unknown Count: 0</span>
+            </div>
         </div>
     </form>
 </div>
 
 <div id="map"></div>
 
+<!-- Modal Structure -->
+<div id="unknown-modal" class="modal">
+    <div class="modal-content">
+        <span class="close-button" id="modal-close">&times;</span>
+        <h2>Unknown Cars</h2>
+        <table id="unknown-cars-table">
+            <thead>
+            <tr>
+                <th>License Plate</th>
+                <th>State</th>
+                <th>Year</th>
+                <th>Make</th>
+                <th>Model</th>
+                <th colspan="2">Actions</th> <!-- Adjusted colspan to accommodate more buttons -->
+            </tr>
+            </thead>
+            <tbody>
+            <!-- Rows will be populated dynamically -->
+            </tbody>
+        </table>
+
+    </div>
+</div>
+
+<!-- Video Modal Structure -->
+<div id="video-modal" class="modal">
+    <div class="modal-content">
+        <span class="close-button" id="video-modal-close">&times;</span>
+        <video id="car-video" width="640" height="480" controls>
+            <source id="car-video-source" src="" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+    </div>
+</div>
 {% endblock %}

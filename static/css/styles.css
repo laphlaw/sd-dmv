@@ -1,5 +1,6 @@
 /* static/css/styles.css */
 
+/* General styles */
 body {
     font-family: Arial, sans-serif;
     margin: 0;
@@ -48,9 +49,15 @@ header h1, footer p {
     padding: 5px 10px;
 }
 
-#car-count {
+#count-container {
+    display: flex;
+    flex-direction: column;
     margin-left: auto;
     font-weight: bold;
+}
+
+#count-container span {
+    margin-top: 5px;
 }
 
 #map {
@@ -58,8 +65,7 @@ header h1, footer p {
     height: 500px;
 }
 
-/* Info window styles remain the same */
-
+/* Info window styles */
 #info-window-content {
     width: 320px;
 }
@@ -103,4 +109,99 @@ header h1, footer p {
 
 #save-car-data {
     margin-bottom: 10px;
+}
+
+/* Modal Styles */
+.modal {
+    display: none; /* Hidden by default */
+    position: fixed;
+    z-index: 1000; /* Sit on top */
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto; /* Enable scroll if needed */
+    background-color: rgba(0, 0, 0, 0.5); /* Black w/ opacity */
+}
+
+.modal-content {
+    background-color: #fefefe;
+    margin: 5% auto;
+    padding: 20px;
+    border: 1px solid #888;
+    width: 80%;
+    max-width: 800px;
+    max-height: 80vh; /* Limit modal height to 80% of viewport height */
+    overflow-y: auto; /* Add vertical scrollbar if content exceeds modal height */
+    position: relative;
+}
+
+.close-button {
+    color: #aaa;
+    float: right;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close-button:hover,
+.close-button:focus {
+    color: black;
+    text-decoration: none;
+}
+
+#unknown-cars-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed; /* Fix table layout */
+}
+
+#unknown-cars-table th,
+#unknown-cars-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+    word-wrap: break-word; /* Allow content to wrap within cells */
+}
+
+#unknown-cars-table th {
+    background-color: #f2f2f2;
+}
+
+#unknown-cars-table input {
+    width: 90%; /* Reduce input width to fit within cells */
+}
+
+#unknown-count {
+    color: blue;
+    cursor: pointer;
+}
+
+/* Adjust buttons within the modal */
+.modal-content button {
+    flex: 1 1 45%; /* Adjust buttons to take up approximately half the width */
+    margin: 2px;
+    padding: 5px 10px;
+}
+
+.button-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+.button-container button {
+    flex: 1 1 45%;
+    margin: 5px;
+}
+
+#video-modal .modal-content {
+    width: auto;
+    max-width: none;
+    text-align: center;
+}
+
+#video-modal video {
+    max-width: 100%;
+    height: auto;
 }
