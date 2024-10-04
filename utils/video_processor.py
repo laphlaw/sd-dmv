@@ -11,6 +11,7 @@ from datetime import datetime
 import exiftool
 import time
 import itertools
+import shutil
 
 # Path to the database
 DATABASE = os.path.join('data', 'cars.db')
@@ -189,7 +190,10 @@ def find_car_from_file(file, directory_path, frame_skip, reader):
         car['longitude'] = None
 
     if metadata and 'QuickTime:CreateDate' in metadata:
-        car['date_time'] = metadata['QuickTime:CreateDate']
+        original_date = metadata['QuickTime:CreateDate']
+        date_obj = datetime.strptime(original_date, '%Y:%m:%d %H:%M:%S')
+        corrected_date = date_obj.strftime('%Y-%m-%d %H:%M:%S')
+        car['date_time'] = corrected_date
     else:
         car['date_time'] = None
 
@@ -216,7 +220,7 @@ def find_car_from_file(file, directory_path, frame_skip, reader):
             break
         else:
             time.sleep(1)
-        if index >= 100:
+        if index >= 50:
             logs(f"We tried too many variations, giving up on {file}")
             break
 
@@ -291,10 +295,14 @@ def process_videos(directory_path, frame_skip=3):
         end_time = time.time()
         elapsed_time = round((end_time - start_time), 2)
         car['process_time'] = elapsed_time
+        insert_car_data(car)
+
+        orig_filepath = directory_path + "/" + f
+        new_filepath = f"data/videos/{f}"
+        shutil.move(orig_filepath, new_filepath)
+        logs(f"Moving {orig_filepath} to {new_filepath}")
         logs(f"Finished processing {f} in {elapsed_time} seconds")
 
-        # Insert car data into the database
-        insert_car_data(car)
 
 if __name__ == '__main__':
     directory_path = 'data/videos-to-process/'  # Update with your actual directory

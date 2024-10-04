@@ -205,3 +205,102 @@ header h1, footer p {
     max-width: 100%;
     height: auto;
 }
+
+/* Table Styles */
+#table-container {
+    padding: 10px;
+}
+
+#car-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+
+#car-table th,
+#car-table td {
+    border: 1px solid #ddd;
+    padding: 8px;
+    text-align: center;
+}
+
+#car-table th {
+    background-color: #f2f2f2;
+    cursor: pointer;
+}
+
+#car-table tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+#car-table tr:hover {
+    background-color: #ddd;
+}
+
+
+#toggle-view {
+    padding: 5px 10px;
+    margin-right: 15px;
+}
+
+/* Adjust map and table container */
+#map {
+    width: 100%;
+    height: 500px;
+    display: none; /* Hidden by default */
+}
+
+#table-container {
+    display: block; /* Shown by default */
+}
+
+/* Style for the license plate link */
+#car-table a {
+    color: blue;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+#car-table a:hover {
+    text-decoration: none;
+}
+
+/* Styles for the car info rows in the video modal */
+#video-modal-car-info {
+    margin-bottom: 20px;
+}
+
+#video-modal-car-info .car-info-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center; /* Center the text boxes */
+    margin-bottom: 10px;
+}
+
+#video-modal-car-info label {
+    margin-right: 5px;
+}
+
+#video-modal-car-info input {
+    margin-right: 15px;
+    margin-bottom: 5px;
+    padding: 5px;
+}
+
+/* Styles for the buttons */
+.video-modal-buttons {
+    margin-top: 15px;
+    text-align: center;
+}
+
+.video-modal-buttons button {
+    margin: 5px;
+    padding: 10px 20px;
+    font-size: 16px;
+}
+
+.video-modal-buttons .delete-button {
+    background-color: red;
+    color: white;
+}

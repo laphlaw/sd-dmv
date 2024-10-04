@@ -7,6 +7,7 @@
     <form id="filter-form">
         <!-- First row of filters -->
         <div class="filter-row">
+            <!-- Existing filters -->
             <label for="make">Make:</label>
             <select id="make" name="make">
                 <option value="">All</option>
@@ -48,6 +49,7 @@
             <input type="date" id="end_date" name="end_date">
 
             <button type="button" id="reset-filters">Reset Filters</button>
+            <button type="button" id="toggle-view">Show Map</button>
             <div id="count-container">
                 <span id="car-count">Car Count: 0</span>
                 <span id="unknown-count">Unknown Count: 0</span>
@@ -56,40 +58,86 @@
     </form>
 </div>
 
-<div id="map"></div>
+<!-- Table to display car data -->
+<div id="table-container">
+    <table id="car-table">
+        <thead>
+            <tr>
+                <th data-sort="year">Year</th>
+                <th data-sort="make">Make</th>
+                <th data-sort="model">Model</th>
+                <th data-sort="license_plate">License Plate</th>
+                <th data-sort="state">State</th>
+                <th data-sort="date_time">Date/Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Rows will be populated dynamically -->
+        </tbody>
+    </table>
+</div>
 
-<!-- Modal Structure -->
+<!-- Map container (hidden by default) -->
+<div id="map" style="display: none;"></div>
+
+<!-- Include the Unknown Cars Modal -->
 <div id="unknown-modal" class="modal">
     <div class="modal-content">
-        <span class="close-button" id="modal-close">&times;</span>
+        <span id="modal-close" class="close">&times;</span>
         <h2>Unknown Cars</h2>
         <table id="unknown-cars-table">
             <thead>
-            <tr>
-                <th>License Plate</th>
-                <th>State</th>
-                <th>Year</th>
-                <th>Make</th>
-                <th>Model</th>
-                <th colspan="2">Actions</th> <!-- Adjusted colspan to accommodate more buttons -->
-            </tr>
+                <tr>
+                    <th>License Plate</th>
+                    <th>State</th>
+                    <th>Year</th>
+                    <th>Make</th>
+                    <th>Model</th>
+                    <th>Actions</th>
+                </tr>
             </thead>
             <tbody>
-            <!-- Rows will be populated dynamically -->
+                <!-- Rows will be populated dynamically -->
             </tbody>
         </table>
-
     </div>
 </div>
 
-<!-- Video Modal Structure -->
+<!-- Include the Video Modal -->
 <div id="video-modal" class="modal">
-    <div class="modal-content">
-        <span class="close-button" id="video-modal-close">&times;</span>
+    <div class="modal-content" tabindex="-1">
+        <span id="video-modal-close" class="close">&times;</span>
+        <!-- Editable Car Information -->
+        <div id="video-modal-car-info">
+            <!-- First line: License Plate and State -->
+            <div class="car-info-row">
+                <label for="video-modal-license-plate">License Plate:</label>
+                <input type="text" id="video-modal-license-plate">
+                <label for="video-modal-state">State:</label>
+                <input type="text" id="video-modal-state">
+            </div>
+            <!-- Second line: Year, Make, Model -->
+            <div class="car-info-row">
+                <label for="video-modal-year">Year:</label>
+                <input type="number" id="video-modal-year">
+                <label for="video-modal-make">Make:</label>
+                <input type="text" id="video-modal-make">
+                <label for="video-modal-model">Model:</label>
+                <input type="text" id="video-modal-model">
+            </div>
+        </div>
+        <!-- Video Element -->
         <video id="car-video" width="640" height="480" controls>
             <source id="car-video-source" src="" type="video/mp4">
             Your browser does not support the video tag.
         </video>
+        <!-- Buttons beneath the video -->
+        <div class="video-modal-buttons">
+            <button type="button" id="video-modal-refresh">Refresh</button>
+            <button type="button" id="video-modal-save">Save</button>
+            <button type="button" id="video-modal-delete" class="delete-button">Delete</button>
+        </div>
     </div>
 </div>
+
 {% endblock %}

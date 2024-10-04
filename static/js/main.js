@@ -5,45 +5,82 @@ let markers = [];
 let infoWindow;
 let currentCarId = null;
 let currentMarker = null;
+let mapInitialized = false;
 
-function initMap() {
-    // Initialize the map after fetching the first car's location
-    fetch('/api/first_car_location')
-        .then(response => response.json())
-        .then(location => {
-            const defaultLocation = { lat: location.latitude, lng: location.longitude };
-            map = new google.maps.Map(document.getElementById('map'), {
-                center: defaultLocation,
-                zoom: 12,
-            });
+let sortDirection = 1; // 1 for ascending, -1 for descending
+let currentSortColumn = '';
 
-            // Load initial data
+let carsInTable = []; // Global array to store cars currently displayed in the table
+let currentCarIndex = 0; // Index of the currently displayed car in the modal
+
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Load initial data
+    fetchCars();
+
+    // Populate dropdowns
+    populateMakes();
+    populateYears();
+    populateStates();
+
+    // Add event listeners to filter inputs to automatically apply filters
+    const filterInputs = document.querySelectorAll('#filter-form input, #filter-form select');
+    filterInputs.forEach(input => {
+        input.addEventListener('change', function() {
             fetchCars();
+            if (this.id === 'make') {
+                populateModels(); // Update models when make changes
+            }
+        });
+    });
 
-            // Populate dropdowns
-            populateMakes();
-            populateYears();
-            populateStates();
+    // Handle reset filters button
+    document.getElementById('reset-filters').addEventListener('click', function() {
+        resetFilters();
+        fetchCars();
+    });
 
-            // Add event listeners to filter inputs to automatically apply filters
-            const filterInputs = document.querySelectorAll('#filter-form input, #filter-form select');
-            filterInputs.forEach(input => {
-                input.addEventListener('change', function() {
-                    fetchCars();
-                    if (this.id === 'make') {
-                        populateModels(); // Update models when make changes
-                    }
-                });
-            });
+    // Handle toggle view button
+    document.getElementById('toggle-view').addEventListener('click', function() {
+        const mapElement = document.getElementById('map');
+        const tableContainer = document.getElementById('table-container');
+        const toggleButton = document.getElementById('toggle-view');
 
-            // Handle reset filters button
-            document.getElementById('reset-filters').addEventListener('click', function() {
-                resetFilters();
+        if (mapElement.style.display === 'none') {
+            // Show map, hide table
+            mapElement.style.display = 'block';
+            tableContainer.style.display = 'none';
+            toggleButton.textContent = 'Show Table';
+
+            // Initialize map if not already initialized
+            if (!mapInitialized) {
+                initMap();
+                mapInitialized = true;
+            } else {
+                // Refresh markers
                 fetchCars();
-            });
-        })
-        .catch(error => console.error('Error fetching first car location:', error));
-}
+            }
+        } else {
+            // Show table, hide map
+            mapElement.style.display = 'none';
+            tableContainer.style.display = 'block';
+            toggleButton.textContent = 'Show Map';
+        }
+    });
+
+    // Add event listeners to table headers for sorting
+    const headers = document.querySelectorAll('#car-table th[data-sort]');
+    headers.forEach(header => {
+        header.addEventListener('click', function() {
+            sortTable(header.getAttribute('data-sort'));
+        });
+    });
+
+    // Event listener for the "Unknown Count" clickable link
+    document.getElementById('unknown-count').addEventListener('click', function() {
+        openUnknownModal();
+    });
+});
 
 // Fetch and display cars based on filters
 function fetchCars() {
@@ -75,20 +112,164 @@ function fetchCars() {
     fetch('/api/cars?' + params.toString())
         .then(response => response.json())
         .then(data => {
-            // Clear existing markers
-            clearMarkers();
-            // Add new markers
-            addMarkers(data);
             // Update car count
             document.getElementById('car-count').textContent = `Car Count: ${data.length}`;
 
             // Calculate unknown count
             let unknownCount = data.filter(car => !car.make || car.make === '').length;
             document.getElementById('unknown-count').textContent = `Unknown Count: ${unknownCount}`;
+
+            // Populate the table
+            populateTable(data);
+
+            // If the map is visible, update markers
+            if (document.getElementById('map').style.display !== 'none') {
+                // Clear existing markers
+                clearMarkers();
+                // Add new markers
+                addMarkers(data);
+            }
         })
         .catch(error => console.error('Error fetching car data:', error));
 }
 
+// Populate the car table
+function populateTable(cars) {
+    carsInTable = cars; // Store the array of cars globally
+    const tbody = document.querySelector('#car-table tbody');
+    tbody.innerHTML = ''; // Clear existing rows
+
+    cars.forEach((car, index) => {
+        const row = document.createElement('tr');
+
+        // Year
+        const yearCell = document.createElement('td');
+        yearCell.textContent = car.year || '';
+        row.appendChild(yearCell);
+
+        // Make
+        const makeCell = document.createElement('td');
+        makeCell.textContent = car.make || '';
+        row.appendChild(makeCell);
+
+        // Model
+        const modelCell = document.createElement('td');
+        modelCell.textContent = car.model || '';
+        row.appendChild(modelCell);
+
+        // License Plate (now a clickable link)
+        const licensePlateCell = document.createElement('td');
+        if (car.license_plate) {
+            const licensePlateLink = document.createElement('a');
+            licensePlateLink.href = '#';
+            licensePlateLink.textContent = car.license_plate.toUpperCase();
+            licensePlateLink.addEventListener('click', function(event) {
+                event.preventDefault(); // Prevent default link behavior
+                if (car.video_path) {
+                    openVideoModal(index); // Pass the index of the current car
+                } else {
+                    alert('No video available for this car.');
+                }
+            });
+            licensePlateCell.appendChild(licensePlateLink);
+        } else {
+            licensePlateCell.textContent = '';
+        }
+        row.appendChild(licensePlateCell);
+
+        // State
+        const stateCell = document.createElement('td');
+        stateCell.textContent = car.state || '';
+        row.appendChild(stateCell);
+
+        // Date/Time
+        const dateTimeCell = document.createElement('td');
+        const formattedDateTime = formatDateTime(car.date_time);
+        dateTimeCell.textContent = formattedDateTime;
+        row.appendChild(dateTimeCell);
+
+        tbody.appendChild(row);
+    });
+}
+
+function formatDateTime(dateTimeStr) {
+    if (!dateTimeStr) return '';
+
+    // Append 'Z' to indicate UTC time
+    let utcDateTimeStr = dateTimeStr + 'Z';
+
+    let date = new Date(utcDateTimeStr);
+
+    if (isNaN(date.getTime())) return '';
+
+    // Convert to local time zone and format
+    return date.toLocaleString();
+}
+
+
+
+// Sorting functionality for the table
+function sortTable(column) {
+    const tbody = document.querySelector('#car-table tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    if (currentSortColumn === column) {
+        // Reverse sort direction
+        sortDirection *= -1;
+    } else {
+        // New column to sort
+        currentSortColumn = column;
+        sortDirection = 1;
+    }
+
+    rows.sort((a, b) => {
+        const aText = a.querySelector(`td:nth-child(${getColumnIndex(column)})`).textContent.trim();
+        const bText = b.querySelector(`td:nth-child(${getColumnIndex(column)})`).textContent.trim();
+
+        if (column === 'year') {
+            // Numeric comparison for year
+            return sortDirection * (parseInt(aText) - parseInt(bText));
+        } else if (column === 'date_time') {
+            // Date comparison
+            const aDate = new Date(aText);
+            const bDate = new Date(bText);
+            return sortDirection * (aDate - bDate);
+        } else {
+            // String comparison
+            return sortDirection * aText.localeCompare(bText);
+        }
+    });
+
+    // Re-append sorted rows
+    rows.forEach(row => tbody.appendChild(row));
+}
+
+// Get column index based on column name
+function getColumnIndex(column) {
+    const columns = ['year', 'make', 'model', 'license_plate', 'state', 'date_time'];
+    return columns.indexOf(column) + 1; // +1 because nth-child is 1-based
+}
+
+
+// Initialize the map
+function initMap() {
+    // Initialize the map after fetching the first car's location
+    fetch('/api/first_car_location')
+        .then(response => response.json())
+        .then(location => {
+            const defaultLocation = { lat: location.latitude, lng: location.longitude };
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: defaultLocation,
+                zoom: 12,
+            });
+
+            // Load initial markers
+            fetchCars();
+        })
+        .catch(error => console.error('Error fetching first car location:', error));
+}
+
+// Add markers to the map
 function addMarkers(cars) {
     cars.forEach(car => {
         const position = { lat: parseFloat(car.latitude), lng: parseFloat(car.longitude) };
@@ -107,18 +288,8 @@ function addMarkers(cars) {
             // Create a new div element to hold the info window content
             const contentDiv = document.createElement('div');
 
-            // Correctly format the date/time for the datetime-local input
-            let formattedDateTime = '';
-            if (car.date_time) {
-                // Create a new Date object from the car.date_time string
-                let date = new Date(car.date_time);
-                if (!isNaN(date.getTime())) {
-                    // Adjust for timezone offset if necessary
-                    let tzOffset = date.getTimezoneOffset() * 60000; // Offset in milliseconds
-                    let localISOTime = new Date(date.getTime() - tzOffset).toISOString().slice(0, 16);
-                    formattedDateTime = localISOTime;
-                }
-            }
+            // Correctly format the date/time for display
+            let formattedDateTime = formatDateTime(car.date_time);
 
             // Build the HTML content with current values
             contentDiv.innerHTML = `
@@ -153,7 +324,7 @@ function addMarkers(cars) {
                 </p>
                 <p>
                     <label for="info-date-time-${car.id}">Date/Time:</label>
-                    <input type="datetime-local" id="info-date-time-${car.id}" value="${formattedDateTime}" readonly>
+                    <input type="text" id="info-date-time-${car.id}" value="${formattedDateTime}" readonly>
                 </p>
                 <p>
                     <label for="info-latitude-${car.id}">Latitude:</label>
@@ -166,10 +337,12 @@ function addMarkers(cars) {
                 <button type="button" id="save-car-data-${car.id}">Save</button>
                 <button type="button" id="refresh-car-data-${car.id}" class="refresh-button">Refresh</button>
                 <button type="button" id="delete-car-data-${car.id}" class="delete-button">Delete</button>
+                ${car.video_path ? `
                 <video width="320" height="240" controls>
                     <source src="/videos/${car.video_path}" type="video/mp4">
                     Your browser does not support the video tag.
                 </video>
+                ` : '<p>No Video Available</p>'}
             `;
 
             // Create the info window
@@ -202,6 +375,7 @@ function addMarkers(cars) {
     });
 }
 
+// Clear markers from the map
 function clearMarkers() {
     markers.forEach(marker => {
         marker.setMap(null);
@@ -209,22 +383,24 @@ function clearMarkers() {
     markers = [];
 }
 
+// Populate makes dropdown
 function populateMakes() {
     fetch('/api/makes')
         .then(response => response.json())
         .then(makes => {
             const makeSelect = document.getElementById('make');
             makeSelect.innerHTML = '<option value="">All</option>';
-            makes.forEach((make, index) => {
+            makes.forEach(makeObj => {
                 const option = document.createElement('option');
-                option.value = make;
-                option.textContent = make;
+                option.value = makeObj.make;
+                option.textContent = `${makeObj.make}: ${makeObj.count}`;
                 makeSelect.appendChild(option);
             });
         })
         .catch(error => console.error('Error fetching makes:', error));
 }
 
+// Populate models dropdown
 function populateModels() {
     const make = document.getElementById('make').value;
     const params = new URLSearchParams();
@@ -245,6 +421,7 @@ function populateModels() {
         .catch(error => console.error('Error fetching models:', error));
 }
 
+// Populate years dropdown
 function populateYears() {
     fetch('/api/years')
         .then(response => response.json())
@@ -268,6 +445,7 @@ function populateYears() {
         .catch(error => console.error('Error fetching years:', error));
 }
 
+// Populate states dropdown
 function populateStates() {
     fetch('/api/states')
         .then(response => response.json())
@@ -284,6 +462,7 @@ function populateStates() {
         .catch(error => console.error('Error fetching states:', error));
 }
 
+// Reset filters
 function resetFilters() {
     document.getElementById('make').value = '';
     document.getElementById('model').value = '';
@@ -297,6 +476,7 @@ function resetFilters() {
     populateModels(); // Reset models dropdown
 }
 
+// Save car data from info window
 function saveCarData(carId) {
     const updatedCarData = {
         id: carId,
@@ -331,6 +511,7 @@ function saveCarData(carId) {
     .catch(error => console.error('Error updating car data:', error));
 }
 
+// Delete car data from info window
 function deleteCarData(carId, videoPath) {
     if (confirm('Are you sure you want to delete this car?')) {
         fetch('/api/delete_car', {
@@ -344,12 +525,16 @@ function deleteCarData(carId, videoPath) {
         .then(result => {
             if (result.status === 'success') {
                 // Remove the marker from the map
-                currentMarker.setMap(null);
+                if (currentMarker) {
+                    currentMarker.setMap(null);
+                }
                 // Remove the marker from the markers array
                 markers = markers.filter(marker => marker.carData.id !== carId);
                 infoWindow.close();
                 // Update car count
                 document.getElementById('car-count').textContent = `Car Count: ${markers.length}`;
+                // Refresh data
+                fetchCars();
             } else {
                 alert('Failed to delete car.');
             }
@@ -358,6 +543,7 @@ function deleteCarData(carId, videoPath) {
     }
 }
 
+// Refresh car data from info window
 function refreshCarData(carId) {
     const licensePlate = document.getElementById(`info-license-plate-${carId}`).value || null;
     const state = document.getElementById(`info-state-${carId}`).value || null;
@@ -384,7 +570,9 @@ function refreshCarData(carId) {
             document.getElementById(`info-vin-${carId}`).value = result.vin || '';
             document.getElementById(`info-state-${carId}`).value = result.state || '';
             // Update the marker title
-            currentMarker.title = `${result.year} ${result.make} ${result.model}`;
+            if (currentMarker) {
+                currentMarker.title = `${result.year} ${result.make} ${result.model}`;
+            }
             // Optionally, refresh the markers and car count
             fetchCars();
         } else {
@@ -397,16 +585,156 @@ function refreshCarData(carId) {
     });
 }
 
-// Event listener for the "Unknown Count" clickable link
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize the map when the DOM is fully loaded
-    initMap();
+// static/js/main.js
 
-    // Add event listener to the unknown count
-    document.getElementById('unknown-count').addEventListener('click', function() {
-        openUnknownModal();
-    });
-});
+function openVideoModal(carIndex) {
+    currentCarIndex = carIndex; // Set the current car index
+    const modal = document.getElementById('video-modal');
+    const closeButton = document.getElementById('video-modal-close');
+    const videoElement = document.getElementById('car-video');
+
+    // Show the modal
+    modal.style.display = 'block';
+
+    // Update the video and car info
+    updateVideoModal();
+
+//    // Set focus to the License Plate input
+//    const licensePlateInput = document.getElementById('video-modal-license-plate');
+//    licensePlateInput.focus();
+//    licensePlateInput.select();
+
+    // Function to close the modal
+    const closeModal = function() {
+        modal.style.display = 'none';
+        videoElement.pause();
+        // Remove event listeners
+        closeButton.removeEventListener('click', closeModal);
+        window.removeEventListener('click', outsideClick);
+        document.removeEventListener('keydown', keydownListener);
+        removeButtonEventListeners();
+    };
+
+    // Function to handle clicks outside the modal content
+    const outsideClick = function(event) {
+        if (event.target == modal) {
+            closeModal();
+        }
+    };
+
+    // Function to handle keydown events
+    const keydownListener = function(event) {
+        event = event || window.event;
+        const key = event.key.toLowerCase();
+
+        // Check if the event target is an input field
+        if (event.target.tagName.toLowerCase() === 'input') {
+            if (key === 'escape' || key === 'esc') {
+                // Unfocus the input field
+                event.target.blur();
+
+                // Set focus to the modal content to enable Tab cycling
+                const modalContent = document.querySelector('#video-modal .modal-content');
+                modalContent.focus();
+
+//                event.preventDefault();
+//                event.stopPropagation();
+            }
+            // Ignore other hotkeys when input is focused
+            return;
+        }
+
+        if (key === ' ') { // Spacebar pressed
+            event.preventDefault();
+            if (videoElement.paused) {
+                videoElement.play();
+            } else {
+                videoElement.pause();
+            }
+            event.stopPropagation();
+        } else if (key === 'escape' || key === 'esc') {
+            event.preventDefault();
+            closeModal();
+            event.stopPropagation();
+        } else if (key === 'arrowleft' || key === 'left') {
+            event.preventDefault();
+            showPreviousVideo();
+        } else if (key === 'arrowright' || key === 'right') {
+            event.preventDefault();
+            showNextVideo();
+        } else if (key === 'v') {
+//            event.preventDefault();
+//            videoElement.play();
+        } else if (key === 'r') {
+            event.preventDefault();
+            refreshCarDataInModal();
+        } else if (key === 's') {
+            event.preventDefault();
+            saveCarDataInModal();
+        } else if (key === 'd') {
+            event.preventDefault();
+            deleteCarDataInModal();
+        }
+    };
+
+    // Close the modal when the close button is clicked
+    closeButton.addEventListener('click', closeModal);
+
+    // Close the modal when clicking outside the modal content
+    window.addEventListener('click', outsideClick);
+
+    // Add keydown event listener
+    document.addEventListener('keydown', keydownListener);
+
+    // Add event listeners for buttons
+    addButtonEventListeners();
+
+    // Function to remove button event listeners
+    function removeButtonEventListeners() {
+//        document.getElementById('video-modal-review').removeEventListener('click', handleReview);
+        document.getElementById('video-modal-refresh').removeEventListener('click', handleRefresh);
+        document.getElementById('video-modal-save').removeEventListener('click', handleSave);
+        document.getElementById('video-modal-delete').removeEventListener('click', handleDelete);
+    }
+
+    // Function to add button event listeners
+    function addButtonEventListeners() {
+//        document.getElementById('video-modal-review').addEventListener('click', handleReview);
+        document.getElementById('video-modal-refresh').addEventListener('click', handleRefresh);
+        document.getElementById('video-modal-save').addEventListener('click', handleSave);
+        document.getElementById('video-modal-delete').addEventListener('click', handleDelete);
+    }
+
+    // Button event handler functions
+    function handleReview() {
+        videoElement.play();
+    }
+
+    function handleRefresh() {
+        refreshCarDataInModal();
+    }
+
+    function handleSave() {
+        saveCarDataInModal();
+    }
+
+    function handleDelete() {
+        deleteCarDataInModal();
+    }
+}
+
+// Function to focus on the license plate input of the topmost row
+function focusLicensePlateInput() {
+    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
+    if (firstCarRow) {
+        const carId = firstCarRow.getAttribute('data-car-id');
+        const licensePlateInput = document.getElementById(`modal-license-plate-${carId}`);
+        if (licensePlateInput) {
+            licensePlateInput.focus();
+            licensePlateInput.select();
+        }
+    }
+}
 
 // Function to open the unknown cars modal
 function openUnknownModal() {
@@ -435,6 +763,7 @@ function openUnknownModal() {
         }
     };
 
+    // Function to handle keydown events
     const keydownListener = function(event) {
         event = event || window.event;
         const key = event.key.toLowerCase();
@@ -452,7 +781,6 @@ function openUnknownModal() {
             return;
         }
 
-        // If no input is focused, handle hotkeys
         if (key === 'v' || key === 'r' || key === 'd') {
             event.preventDefault(); // Prevent default behavior
         }
@@ -478,7 +806,8 @@ function openUnknownModal() {
     // Add keydown event listener
     document.addEventListener('keydown', keydownListener);
 }
-// Function to fetch unknown cars and populate the table
+
+// Fetch unknown cars and populate the modal table
 function fetchUnknownCars() {
     fetch('/api/unknown_cars')
         .then(response => response.json())
@@ -589,67 +918,94 @@ function fetchUnknownCars() {
         .catch(error => console.error('Error fetching unknown cars:', error));
 }
 
-function openVideoModal(videoPath) {
-    const modal = document.getElementById('video-modal');
-    const closeButton = document.getElementById('video-modal-close');
-    const videoSource = document.getElementById('car-video-source');
-    const videoElement = document.getElementById('car-video');
-
-    // Set the video source
-    videoSource.src = `/videos/${videoPath}`;
-    videoElement.load();
-
-    // Show the modal
-    modal.style.display = 'block';
-
-    // Function to close the modal
-    const closeModal = function() {
-        modal.style.display = 'none';
-        videoElement.pause();
-        // Remove event listeners
-        closeButton.removeEventListener('click', closeModal);
-        window.removeEventListener('click', outsideClick);
-        document.removeEventListener('keydown', keydownListener);
-
-        // After closing the video modal, focus on the license plate input of the topmost row
-        focusLicensePlateInput();
-    };
-
-    // Function to handle clicks outside the modal content
-    const outsideClick = function(event) {
-        if (event.target == modal) {
-            closeModal();
+// Functions for hotkeys in the unknown cars modal
+function triggerReviewTopCar() {
+    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
+    if (firstCarRow) {
+        const videoPath = firstCarRow.getAttribute('data-video-path');
+        if (videoPath) {
+            openVideoModal(videoPath);
+        } else {
+            alert('No video available for the top car.');
         }
-    };
+    } else {
+        alert('No unknown cars available.');
+    }
+}
 
-    // Function to handle keydown events
-    const keydownListener = function(event) {
-        event = event || window.event;
-        const key = event.key.toLowerCase();
+function triggerRefreshTopCar() {
+    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
+    if (firstCarRow) {
+        const carId = firstCarRow.getAttribute('data-car-id');
+        const licensePlateInput = document.getElementById(`modal-license-plate-${carId}`);
+        const stateInput = document.getElementById(`modal-state-${carId}`);
+        const licensePlate = licensePlateInput ? licensePlateInput.value : null;
+        const state = stateInput ? stateInput.value : null;
 
-        if (key === ' ') { // Spacebar pressed
-            event.preventDefault(); // Prevent scrolling
-            if (videoElement.paused) {
-                videoElement.play();
+        if (!licensePlate || !state) {
+            alert('License plate and state are required to refresh car data.');
+            return;
+        }
+
+        fetch('/api/refresh_car', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id: carId, license_plate: licensePlate, state: state })
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.status === 'success') {
+                // Update fields with new data
+                document.getElementById(`modal-year-${carId}`).value = result.year || '';
+                document.getElementById(`modal-make-${carId}`).value = result.make || '';
+                document.getElementById(`modal-model-${carId}`).value = result.model || '';
+                // Refresh counts and markers
+                fetchCars();
+                fetchUnknownCars();
             } else {
-                videoElement.pause();
+                alert('Failed to refresh car data: ' + result.message);
             }
-            event.stopPropagation(); // Prevent event from reaching other handlers
-        } else if (key === 'escape' || key === 'esc') {
-            event.preventDefault();
-            closeModal();
-            event.stopPropagation(); // Prevent event from reaching other handlers
+        })
+        .catch(error => {
+            console.error('Error refreshing car data:', error);
+            alert('An error occurred while refreshing car data.');
+        });
+    } else {
+        alert('No unknown cars available.');
+    }
+}
+
+function triggerDeleteTopCar() {
+    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
+    if (firstCarRow) {
+        const carId = firstCarRow.getAttribute('data-car-id');
+        const videoPath = firstCarRow.getAttribute('data-video-path');
+
+        if (confirm('Are you sure you want to delete this car? This action cannot be undone.')) {
+            fetch('/api/delete_car', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ id: carId, video_path: videoPath })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status === 'success') {
+                    // Update counts and markers
+                    fetchCars();
+                    fetchUnknownCars();
+                } else {
+                    alert('Failed to delete car.');
+                }
+            })
+            .catch(error => console.error('Error deleting car data:', error));
         }
-    };
-
-    // Close the modal when the close button is clicked
-    closeButton.addEventListener('click', closeModal);
-
-    // Close the modal when clicking outside the modal content
-    window.addEventListener('click', outsideClick);
-
-    // Add keydown event listener
-    document.addEventListener('keydown', keydownListener);
+    } else {
+        alert('No unknown cars available.');
+    }
 }
 
 // Function to refresh car data from the modal
@@ -745,103 +1101,157 @@ function modalDeleteCarData(carId, videoPath) {
     }
 }
 
-function triggerReviewTopCar() {
-    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
-    if (firstCarRow) {
-        const videoPath = firstCarRow.getAttribute('data-video-path');
-        if (videoPath) {
-            openVideoModal(videoPath);
-        } else {
-            alert('No video available for the top car.');
+function showPreviousVideo() {
+    let found = false;
+    for (let i = currentCarIndex - 1; i >= 0; i--) {
+        if (carsInTable[i].video_path) {
+            currentCarIndex = i;
+            found = true;
+            break;
         }
+    }
+    if (found) {
+        updateVideoModal();
     } else {
-        alert('No unknown cars available.');
+        alert('No previous videos available.');
     }
 }
 
-function triggerRefreshTopCar() {
-    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
-    if (firstCarRow) {
-        const carId = firstCarRow.getAttribute('data-car-id');
-        const licensePlateInput = document.getElementById(`modal-license-plate-${carId}`);
-        const stateInput = document.getElementById(`modal-state-${carId}`);
-        const licensePlate = licensePlateInput ? licensePlateInput.value : null;
-        const state = stateInput ? stateInput.value : null;
-
-        if (!licensePlate || !state) {
-            alert('License plate and state are required to refresh car data.');
-            return;
+function showNextVideo() {
+    let found = false;
+    for (let i = currentCarIndex + 1; i < carsInTable.length; i++) {
+        if (carsInTable[i].video_path) {
+            currentCarIndex = i;
+            found = true;
+            break;
         }
+    }
+    if (found) {
+        updateVideoModal();
+    } else {
+        alert('No more videos available.');
+    }
+}
 
-        fetch('/api/refresh_car', {
+function updateVideoModal() {
+    const car = carsInTable[currentCarIndex];
+    const videoSource = document.getElementById('car-video-source');
+    const videoElement = document.getElementById('car-video');
+
+    if (car.video_path) {
+        // Set the new video source
+        videoSource.src = `/videos/${car.video_path}`;
+        videoElement.load();
+        videoElement.play();
+
+        // Update car information
+        document.getElementById('video-modal-license-plate').value = car.license_plate || '';
+        document.getElementById('video-modal-state').value = car.state || '';
+        document.getElementById('video-modal-year').value = car.year || '';
+        document.getElementById('video-modal-make').value = car.make || '';
+        document.getElementById('video-modal-model').value = car.model || '';
+    } else {
+        alert('No video available for this car.');
+    }
+}
+
+function refreshCarDataInModal() {
+    const carId = carsInTable[currentCarIndex].id;
+    const licensePlate = document.getElementById('video-modal-license-plate').value || null;
+    const state = document.getElementById('video-modal-state').value || null;
+
+    if (!licensePlate || !state) {
+        alert('License plate and state are required to refresh car data.');
+        return;
+    }
+
+    fetch('/api/refresh_car', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ id: carId, license_plate: licensePlate, state: state })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            // Update fields with new data
+            document.getElementById('video-modal-year').value = result.year || '';
+            document.getElementById('video-modal-make').value = result.make || '';
+            document.getElementById('video-modal-model').value = result.model || '';
+            // Refresh data in table and map
+            fetchCars();
+        } else {
+            alert('Failed to refresh car data: ' + result.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error refreshing car data:', error);
+        alert('An error occurred while refreshing car data.');
+    });
+}
+
+function saveCarDataInModal() {
+    const carId = carsInTable[currentCarIndex].id;
+    const updatedCarData = {
+        id: carId,
+        year: document.getElementById('video-modal-year').value || null,
+        make: document.getElementById('video-modal-make').value || null,
+        model: document.getElementById('video-modal-model').value || null,
+        license_plate: document.getElementById('video-modal-license-plate').value || null,
+        state: document.getElementById('video-modal-state').value || null
+    };
+
+    fetch('/api/update_car', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(updatedCarData)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.status === 'success') {
+            // Update data in table
+            fetchCars();
+//            alert('Car data saved successfully.');
+        } else {
+            alert('Failed to save car data.');
+        }
+    })
+    .catch(error => console.error('Error saving car data:', error));
+}
+
+function deleteCarDataInModal() {
+    const car = carsInTable[currentCarIndex];
+    if (confirm('Are you sure you want to delete this car? This action cannot be undone.')) {
+        fetch('/api/delete_car', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ id: carId, license_plate: licensePlate, state: state })
+            body: JSON.stringify({ id: car.id, video_path: car.video_path })
         })
         .then(response => response.json())
         .then(result => {
             if (result.status === 'success') {
-                // Update fields with new data
-                document.getElementById(`modal-year-${carId}`).value = result.year || '';
-                document.getElementById(`modal-make-${carId}`).value = result.make || '';
-                document.getElementById(`modal-model-${carId}`).value = result.model || '';
-                // Refresh counts and markers
+                // Remove the car from the array and update the modal or close it
+                carsInTable.splice(currentCarIndex, 1);
+                if (carsInTable.length > 0) {
+                    if (currentCarIndex >= carsInTable.length) {
+                        currentCarIndex = carsInTable.length - 1;
+                    }
+                    updateVideoModal();
+                } else {
+                    // No more cars left
+                    document.getElementById('video-modal').style.display = 'none';
+                }
+                // Refresh data in table and map
                 fetchCars();
-                fetchUnknownCars();
             } else {
-                alert('Failed to refresh car data: ' + result.message);
+                alert('Failed to delete car.');
             }
         })
-        .catch(error => {
-            console.error('Error refreshing car data:', error);
-            alert('An error occurred while refreshing car data.');
-        });
-    } else {
-        alert('No unknown cars available.');
-    }
-}
-
-function focusLicensePlateInput() {
-    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
-    if (firstCarRow) {
-        const carId = firstCarRow.getAttribute('data-car-id');
-        const licensePlateInput = document.getElementById(`modal-license-plate-${carId}`);
-        if (licensePlateInput) {
-            licensePlateInput.focus();
-            licensePlateInput.select();
-        }
-    }
-}
-
-function triggerDeleteTopCar() {
-    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
-    if (firstCarRow) {
-        const carId = firstCarRow.getAttribute('data-car-id');
-        const videoPath = firstCarRow.getAttribute('data-video-path');
-
-        if (confirm('Are you sure you want to delete this car? This action cannot be undone.')) {
-            fetch('/api/delete_car', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ id: carId, video_path: videoPath })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.status === 'success') {
-                    // Update counts and markers
-                    fetchCars();
-                    fetchUnknownCars();
-                } else {
-                    alert('Failed to delete car.');
-                }
-            })
-            .catch(error => console.error('Error deleting car data:', error));
-        }
-    } else {
-        alert('No unknown cars available.');
+        .catch(error => console.error('Error deleting car data:', error));
     }
 }

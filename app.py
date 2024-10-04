@@ -15,7 +15,7 @@ app.config['UPLOAD_FOLDER'] = os.path.join(app.root_path, 'data', 'videos')
 # Database helper functions
 def get_db_connection():
     conn = sqlite3.connect(app.config['DATABASE'])
-    conn.row_factory = sqlite3.Row  # Enable dict-like access to rows
+    conn.row_factory = sqlite3.Row
     return conn
 
 # Routes
@@ -69,10 +69,10 @@ def get_cars():
         query += ' AND state = ?'
         params.append(state)
     if start_date:
-        query += ' AND date_time >= ?'
+        query += " AND date(date_time) >= date(?)"
         params.append(start_date)
     if end_date:
-        query += ' AND date_time <= ?'
+        query += " AND date(date_time) <= date(?)"
         params.append(end_date)
 
     cursor.execute(query, params)
@@ -120,16 +120,19 @@ def get_first_car_location():
 def get_makes():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('SELECT DISTINCT make FROM cars ORDER BY make')
+    cursor.execute('''
+        SELECT make, COUNT(*) as count
+        FROM cars
+        WHERE make IS NOT NULL AND make != ''
+        GROUP BY make
+        ORDER BY make ASC
+    ''')
     rows = cursor.fetchall()
     conn.close()
-    makes = []
-    makes.append('Unknown')  # Add 'Unknown' as the second option
-    for row in rows:
-        if row['make']:
-            makes.append(row['make'])
-    return jsonify(makes)
 
+    makes_with_counts = [{'make': row['make'], 'count': row['count']} for row in rows]
+
+    return jsonify(makes_with_counts)
 
 @app.route('/api/models')
 def get_models():
