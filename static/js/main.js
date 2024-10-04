@@ -419,19 +419,65 @@ function openUnknownModal() {
     // Fetch unknown cars and populate the table
     fetchUnknownCars();
 
-    // Close the modal when the close button is clicked
-    closeButton.onclick = function() {
+    // Function to close the modal
+    const closeModal = function() {
         modal.style.display = 'none';
+        // Remove event listeners
+        closeButton.removeEventListener('click', closeModal);
+        window.removeEventListener('click', outsideClick);
+        document.removeEventListener('keydown', keydownListener);
     };
 
-    // Close the modal when clicking outside the modal content
-    window.onclick = function(event) {
+    // Function to handle clicks outside the modal content
+    const outsideClick = function(event) {
         if (event.target == modal) {
-            modal.style.display = 'none';
+            closeModal();
         }
     };
-}
 
+    const keydownListener = function(event) {
+        event = event || window.event;
+        const key = event.key.toLowerCase();
+
+        // Check if the event target is an input field
+        if (event.target.tagName.toLowerCase() === 'input') {
+            if (key === 'escape' || key === 'esc') {
+                // Unfocus the input field
+                event.target.blur();
+                // Prevent default behavior and stop propagation
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            // Do not handle other keys when input is focused
+            return;
+        }
+
+        // If no input is focused, handle hotkeys
+        if (key === 'v' || key === 'r' || key === 'd') {
+            event.preventDefault(); // Prevent default behavior
+        }
+
+        if (key === 'v') {
+            triggerReviewTopCar();
+        } else if (key === 'r') {
+            triggerRefreshTopCar();
+        } else if (key === 'd') {
+            triggerDeleteTopCar();
+        } else if (key === 'escape' || key === 'esc') {
+            // Do nothing when Escape is pressed and no input is focused
+            event.preventDefault();
+        }
+    };
+
+    // Close the modal when the close button is clicked
+    closeButton.addEventListener('click', closeModal);
+
+    // Close the modal when clicking outside the modal content
+    window.addEventListener('click', outsideClick);
+
+    // Add keydown event listener
+    document.addEventListener('keydown', keydownListener);
+}
 // Function to fetch unknown cars and populate the table
 function fetchUnknownCars() {
     fetch('/api/unknown_cars')
@@ -442,6 +488,10 @@ function fetchUnknownCars() {
 
             data.forEach(car => {
                 const row = document.createElement('tr');
+
+                // Store car ID and video path as data attributes
+                row.setAttribute('data-car-id', car.id);
+                row.setAttribute('data-video-path', car.video_path);
 
                 // Editable fields
                 const licensePlateCell = document.createElement('td');
@@ -559,7 +609,10 @@ function openVideoModal(videoPath) {
         // Remove event listeners
         closeButton.removeEventListener('click', closeModal);
         window.removeEventListener('click', outsideClick);
-        document.removeEventListener('keydown', escKeyListener);
+        document.removeEventListener('keydown', keydownListener);
+
+        // After closing the video modal, focus on the license plate input of the topmost row
+        focusLicensePlateInput();
     };
 
     // Function to handle clicks outside the modal content
@@ -569,11 +622,23 @@ function openVideoModal(videoPath) {
         }
     };
 
-    // Function to handle ESC key press
-    const escKeyListener = function(event) {
+    // Function to handle keydown events
+    const keydownListener = function(event) {
         event = event || window.event;
-        if (event.key === "Escape" || event.key === "Esc") {
+        const key = event.key.toLowerCase();
+
+        if (key === ' ') { // Spacebar pressed
+            event.preventDefault(); // Prevent scrolling
+            if (videoElement.paused) {
+                videoElement.play();
+            } else {
+                videoElement.pause();
+            }
+            event.stopPropagation(); // Prevent event from reaching other handlers
+        } else if (key === 'escape' || key === 'esc') {
+            event.preventDefault();
             closeModal();
+            event.stopPropagation(); // Prevent event from reaching other handlers
         }
     };
 
@@ -583,8 +648,8 @@ function openVideoModal(videoPath) {
     // Close the modal when clicking outside the modal content
     window.addEventListener('click', outsideClick);
 
-    // Close the modal when the ESC key is pressed
-    document.addEventListener('keydown', escKeyListener);
+    // Add keydown event listener
+    document.addEventListener('keydown', keydownListener);
 }
 
 // Function to refresh car data from the modal
@@ -677,5 +742,106 @@ function modalDeleteCarData(carId, videoPath) {
             }
         })
         .catch(error => console.error('Error deleting car data:', error));
+    }
+}
+
+function triggerReviewTopCar() {
+    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
+    if (firstCarRow) {
+        const videoPath = firstCarRow.getAttribute('data-video-path');
+        if (videoPath) {
+            openVideoModal(videoPath);
+        } else {
+            alert('No video available for the top car.');
+        }
+    } else {
+        alert('No unknown cars available.');
+    }
+}
+
+function triggerRefreshTopCar() {
+    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
+    if (firstCarRow) {
+        const carId = firstCarRow.getAttribute('data-car-id');
+        const licensePlateInput = document.getElementById(`modal-license-plate-${carId}`);
+        const stateInput = document.getElementById(`modal-state-${carId}`);
+        const licensePlate = licensePlateInput ? licensePlateInput.value : null;
+        const state = stateInput ? stateInput.value : null;
+
+        if (!licensePlate || !state) {
+            alert('License plate and state are required to refresh car data.');
+            return;
+        }
+
+        fetch('/api/refresh_car', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ id: carId, license_plate: licensePlate, state: state })
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.status === 'success') {
+                // Update fields with new data
+                document.getElementById(`modal-year-${carId}`).value = result.year || '';
+                document.getElementById(`modal-make-${carId}`).value = result.make || '';
+                document.getElementById(`modal-model-${carId}`).value = result.model || '';
+                // Refresh counts and markers
+                fetchCars();
+                fetchUnknownCars();
+            } else {
+                alert('Failed to refresh car data: ' + result.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error refreshing car data:', error);
+            alert('An error occurred while refreshing car data.');
+        });
+    } else {
+        alert('No unknown cars available.');
+    }
+}
+
+function focusLicensePlateInput() {
+    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
+    if (firstCarRow) {
+        const carId = firstCarRow.getAttribute('data-car-id');
+        const licensePlateInput = document.getElementById(`modal-license-plate-${carId}`);
+        if (licensePlateInput) {
+            licensePlateInput.focus();
+            licensePlateInput.select();
+        }
+    }
+}
+
+function triggerDeleteTopCar() {
+    const firstCarRow = document.querySelector('#unknown-cars-table tbody tr');
+    if (firstCarRow) {
+        const carId = firstCarRow.getAttribute('data-car-id');
+        const videoPath = firstCarRow.getAttribute('data-video-path');
+
+        if (confirm('Are you sure you want to delete this car? This action cannot be undone.')) {
+            fetch('/api/delete_car', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ id: carId, video_path: videoPath })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.status === 'success') {
+                    // Update counts and markers
+                    fetchCars();
+                    fetchUnknownCars();
+                } else {
+                    alert('Failed to delete car.');
+                }
+            })
+            .catch(error => console.error('Error deleting car data:', error));
+        }
+    } else {
+        alert('No unknown cars available.');
     }
 }
