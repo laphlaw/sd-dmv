@@ -66,8 +66,12 @@ def get_cars():
         query += ' AND color = ?'
         params.append(color)
     if state:
-        query += ' AND state = ?'
-        params.append(state)
+        if state == "Out of State":
+            query += ' AND state != ?'
+            params.append('CA')
+        else:
+            query += ' AND state = ?'
+            params.append(state)
     if start_date:
         query += " AND date(date_time) >= date(?)"
         params.append(start_date)

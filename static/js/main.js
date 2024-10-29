@@ -458,9 +458,16 @@ function populateStates() {
                 option.textContent = state;
                 stateSelect.appendChild(option);
             });
+
+            // Add "Out of State" option
+            const outOfStateOption = document.createElement('option');
+            outOfStateOption.value = 'Out of State';
+            outOfStateOption.textContent = 'Out of State';
+            stateSelect.appendChild(outOfStateOption);
         })
         .catch(error => console.error('Error fetching states:', error));
 }
+
 
 // Reset filters
 function resetFilters() {
